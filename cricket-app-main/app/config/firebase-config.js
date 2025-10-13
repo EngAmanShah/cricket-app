@@ -1,6 +1,8 @@
+// config/firebase-config.js
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database"; // ✅ Realtime DB
 import { getStorage } from "firebase/storage";
 import {
   API_KEY,
@@ -8,7 +10,8 @@ import {
   PROJECT_ID,
   STORAGE_BUCKET,
   MESSAGING_SENDER_ID,
-  APP_ID
+  APP_ID,
+  FIREBASE_DATABASE_URL,
 } from "@env";
 
 const firebaseConfig = {
@@ -18,11 +21,15 @@ const firebaseConfig = {
   storageBucket: STORAGE_BUCKET,
   messagingSenderId: MESSAGING_SENDER_ID,
   appId: APP_ID,
+  databaseURL: FIREBASE_DATABASE_URL, // ✅ Required for Realtime DB
 };
 
+// Initialize app
 const app = initializeApp(firebaseConfig);
 
 
+
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const firestore = getFirestore(app);
+export const db = getDatabase(app); // ✅ Realtime DB instance (important)
 export const storage = getStorage(app);

@@ -1,32 +1,85 @@
-import React from "react";
-import { View, Text, ScrollView, TouchableWithoutFeedback } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
-
-import Screen from "../components/Screen";
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 import Header from "./Header";
+import Screen from "../components/Screen";
 import MatchCard from "../components/cards/MatchCard";
 import TournamentCard from "../components/cards/TournamentCard";
 import ClubCard from "../components/cards/ClubCard";
 import PlayerCard from "../components/cards/PlayerCard";
 import NewsCard from "../components/cards/NewsCard";
+import { db } from "../config/firebase-config";
+import { ref, onValue } from "firebase/database";
 
 export default function HomeScreen({ navigation }) {
+  const [tournaments, setTournaments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const tournamentsRef = ref(db, "tournaments");
+
+    const unsubscribe = onValue(
+      tournamentsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const list = Object.entries(data).map(([id, value]) => ({
+            id,
+            name: value.name || "Unnamed Tournament",
+            imageUrl: value.imageUrl || null,
+            startDate: value.startDate || "N/A",
+            endDate: value.endDate || "N/A",
+            createdAt: value.createdAt || "1970-01-01",
+          }));
+
+          // Sort by latest createdAt
+          list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          setTournaments(list);
+        } else {
+          setTournaments([]);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error("🔥 Firebase fetch error:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // 🔹 Calculate tournament status dynamically
+  const getStatus = (tournament) => {
+    const today = new Date();
+    const start = new Date(tournament.startDate);
+    const end = new Date(tournament.endDate);
+
+    if (start > today) return "Upcoming";
+    if (start <= today && today <= end) return "Ongoing";
+    if (end < today) return "Past";
+    return "Upcoming";
+  };
 
   return (
     <Screen>
+      {/* ✅ Single Header only */}
       <Header
         handleSearch={() => navigation.navigate("Search")}
         handleNews={() => navigation.navigate("News")}
         handleDrawer={() => navigation.openDrawer()}
       />
+
       <ScrollView contentContainerStyle={{ backgroundColor: "#e0dede" }}>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          Matches
-        </Text>
-        <ScrollView
-          horizontal
-          contentContainerStyle={{ height: 160, paddingRight: 20 }}
-        >
+        {/* Matches Section */}
+        <Text style={styles.sectionTitle}>Matches</Text>
+        <ScrollView horizontal contentContainerStyle={{ height: 160, paddingRight: 20 }}>
           <MatchCard
             status="LIVE"
             category="T20"
@@ -37,163 +90,53 @@ export default function HomeScreen({ navigation }) {
             overs1="20.0"
             score2="90/7"
             overs2="17.0"
-            result="USAMA HAZRO requires 20 runs on 3 overs"
-            onPress={() => navigation.navigate("Match Details")}
-          />
-          <MatchCard
-            status="LIVE"
-            category="Club"
-            description="king eleven VS KPK - club match, Peshawar"
-            team1="KING ELEVEN"
-            team2="KPK"
-            score1="100/5"
-            overs1="10.0"
-            score2="190/7"
-            overs2="20.0"
-            result="KING ELEVEN requires 90 runs on 10 overs"
-            onPress={() => navigation.navigate("Match Details")}
-          />
-          <MatchCard
-            status="LIVE"
-            category="T20"
-            description="ABD VS ZFL - 3rd T20, Islamabad"
-            team1="ABD"
-            team2="ZFL"
-            score1="80/2"
-            overs1="10.3"
-            score2="0/0"
-            overs2="00.0"
-            result="ZFL Yet to bat"
-            onPress={() => navigation.navigate("Match Details")}
-          />
-          <MatchCard
-            status="LIVE"
-            category="T20"
-            description="ABD VS ZFL - 3rd T20, Islamabad"
-            team1="ABD"
-            team2="ZFL"
-            score1="80/2"
-            overs1="10.3"
-            score2="0/0"
-            overs2="00.0"
-            result="ZFL Yet to bat"
-            onPress={() => navigation.navigate("Match Details")}
-          />
-          <MatchCard
-            status="LIVE"
-            category="T20"
-            description="ABD VS ZFL - 3rd T20, Islamabad"
-            team1="ABD"
-            team2="ZFL"
-            score1="80/2"
-            overs1="10.3"
-            score2="0/0"
-            overs2="00.0"
-            result="ZFL Yet to bat"
+            result="USAMA HAZRO requires 20 runs in 3 overs"
             onPress={() => navigation.navigate("Match Details")}
           />
         </ScrollView>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          Tournaments
-        </Text>
-        <ScrollView
-          horizontal
-          contentContainerStyle={{ paddingRight: 20, height: 160 }}
-        >
+
+        {/* ✅ Tournament Section */}
+        <Text style={styles.sectionTitle}>Tournaments</Text>
+
+      {loading ? (
+  <ActivityIndicator size="large" color="#3f8c67" style={{ marginTop: 20 }} />
+) : tournaments.length > 0 ? (
+  <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 160 }}>
+    {tournaments.map((t) => {
+      console.log("Tournament Item:", t); // ✅ Debug each tournament
+
+      return (
+        <View key={t.id} style={{ position: "relative" }}>
           <TournamentCard
-            name="zahid bangash tournament- hangu"
-            teams={12}
-            status="Ongoing"
-            image={require("../assets/t1.jpg")}
-            date="03 Nov, 2022 to 20 Dec, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
+            name={t.name}
+            image={t.logo ? { uri: t.logo } : require("../assets/t1.jpg")} // ✅ use t.logo
+            date={`${t.startDate || t.createdAt} - ${t.endDate || "TBD"}`} // fallback startDate
+            onPress={() => {
+              console.log("Navigating to TournamentDetails with ID:", t.id); // ✅ Debug navigation
+              navigation.navigate("TournamentDetails", { tournamentId: t.id }); // ✅ pass correct ID
+            }}
           />
-          <TournamentCard
-            name="Night tournament - Hazro"
-            teams={20}
-            status="Ongoing"
-            image={require("../assets/t2.jpg")}
-            date="03 Nov, 2022 to 30 Nov, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
-          />
-          <TournamentCard
-            name="Peshawar Super league - Peshawar"
-            teams={8}
-            status="Ongoing"
-            image={require("../assets/t3.jpg")}
-            date="08 Oct, 2022 to 29 Nov, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
-          />
-          <TournamentCard
-            name="Tournament Name- City"
-            teams={19}
-            status="Ongoing"
-            image={require("../assets/t1.jpg")}
-            date="20 Nv, 2022 to 20 Dec, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
-          />
-          <TournamentCard
-            name="Karachi T10 League- Karachi"
-            teams={14}
-            status="Ongoing"
-            image={require("../assets/t2.jpg")}
-            date="20 Nv, 2022 to 20 Dec, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
-          />
-          <TournamentCard
-            name="zahid bangash tournament- hangu"
-            teams={6}
-            status="Ongoing"
-            image={require("../assets/t3.jpg")}
-            date="20 Nv, 2022 to 20 Dec, 2022"
-            onPress={() => navigation.navigate("Tournament Details")}
-          />
+          {/* Status badge */}
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusText}>{getStatus(t)}</Text>
+          </View>
+        </View>
+      );
+    })}
+  </ScrollView>
+        ) : (
+          <Text style={{ marginLeft: 20, color: "#555" }}>No tournaments available</Text>
+        )}
+
+        {/* Clubs Section */}
+        <Text style={styles.sectionTitle}>Clubs</Text>
+        <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 160 }}>
+          <ClubCard name="Hazro Cricket Club" image={require("../assets/t3.jpg")} address="Hazro" />
         </ScrollView>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          Clubs
-        </Text>
-        <ScrollView
-          horizontal
-          contentContainerStyle={{ paddingRight: 20, height: 160 }}
-        >
-          <ClubCard
-            name="Harzo Cricket Club"
-            image={require("../assets/t3.jpg")}
-            address="Hazro"
-          />
-          <ClubCard
-            name="Osama club"
-            image={require("../assets/t2.jpg")}
-            address="Attock"
-          />
-          <ClubCard
-            name="Karachi Club"
-            image={require("../assets/t1.jpg")}
-            address="Karachi"
-          />
-          <ClubCard
-            name="Club name"
-            image={require("../assets/t3.jpg")}
-            address="Islamabad"
-          />
-          <ClubCard
-            name="King Club"
-            image={require("../assets/t2.jpg")}
-            address="Peshawar"
-          />
-          <ClubCard
-            name="Club name"
-            image={require("../assets/t1.jpg")}
-            address="Faisalabad"
-          />
-        </ScrollView>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          Featured Players
-        </Text>
-        <ScrollView
-          horizontal
-          contentContainerStyle={{ height: 160, paddingRight: 20 }}
-        >
+
+        {/* Players Section */}
+        <Text style={styles.sectionTitle}>Featured Players</Text>
+        <ScrollView horizontal contentContainerStyle={{ height: 160, paddingRight: 20 }}>
           <PlayerCard
             name="Muhammad Zahid"
             image={require("../assets/profile.jpeg")}
@@ -202,82 +145,61 @@ export default function HomeScreen({ navigation }) {
             matches={10}
             type="Batter"
           />
-          <PlayerCard
-            name="Shahid Afridi"
-            image={require("../assets/shahid.jpg")}
-            runs={2000}
-            wickets={50}
-            matches={70}
-            type="All rounder"
-          />
-          <PlayerCard
-            name="Alyan Subhani"
-            image={require("../assets/player2.jpg")}
-            runs={200}
-            wickets={20}
-            matches={7}
-            type="Batter"
-          />
-          <PlayerCard
-            name="Muhammad Osama"
-            image={require("../assets/player1.jpg")}
-            runs={150}
-            wickets={7}
-            matches={3}
-            type="Bowler"
-          />
         </ScrollView>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          News/Blogs
-        </Text>
-        <ScrollView
-          horizontal
-          contentContainerStyle={{ paddingRight: 20, height: 200 }}
-        >
+
+        {/* News Section */}
+        <Text style={styles.sectionTitle}>News/Blogs</Text>
+        <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 200 }}>
           <NewsCard
             image={require("../assets/india.jpg")}
-            description="India won the match against pakistan in 2022 men worldcup ..."
+            description="India won the match against Pakistan in the 2022 World Cup..."
             date="03 November, 2022"
           />
-          <NewsCard
-            image={require("../assets/australia.jpg")}
-            description="Australia won the match against pakistan in 2022 men worldcup ..."
-            date="01 March, 2022"
-          />
-          <NewsCard
-            image={require("../assets/pakistan.jpg")}
-            description="Pakistan won the match against pakistan in 2022 men worldcup ..."
-            date="07 October, 2022"
-          />
-          <NewsCard
-            image={require("../assets/srilanka.jpg")}
-            description="Srilanka won the match against pakistan in 2020 men worldcup ..."
-            date="05 Jun, 2022"
-          />
         </ScrollView>
-        <Text style={{ fontWeight: "bold", fontSize: 20, margin: 20 }}>
-          Support
-        </Text>
-        <View
-          style={{
-            padding: 20,
-            width: 320,
-            height: 140,
-            backgroundColor: "#3f8c67",
-            borderRadius: 20,
-            marginLeft: 20,
-            elevation: 5,
-            marginBottom: 20,
-          }}
-        >
+
+        {/* Support Section */}
+        <Text style={styles.sectionTitle}>Support</Text>
+        <View style={styles.supportBox}>
           <Text style={{ color: "white", fontWeight: "bold", fontSize: 17 }}>
             Need help?
           </Text>
           <Text style={{ color: "white", lineHeight: 20 }}>
-            {`Mail us at support@cricworld.com \nCall or WhatsApp at \nOsama +923125273333 \nZahid +923125274444`}
+            {`Mail us at support@cricworld.com \nCall or WhatsApp:\nOsama +923125273333\nZahid +923125274444`}
           </Text>
         </View>
       </ScrollView>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  sectionTitle: {
+    fontWeight: "bold",
+    fontSize: 20,
+    margin: 20,
+  },
+  statusBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "#3f8c67",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  statusText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  supportBox: {
+    padding: 20,
+    width: 320,
+    height: 140,
+    backgroundColor: "#3f8c67",
+    borderRadius: 20,
+    marginLeft: 20,
+    elevation: 5,
+    marginBottom: 20,
+  },
+});

@@ -1,13 +1,14 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-import { AddTS } from "../screens";
+
+import AddTournamentScreen from "../screens/AddTournmetScreen";
 
 const Stack = createNativeStackNavigator();
 
 const TournamentNavigator = () => (
   <Stack.Navigator >
-    <Stack.Screen name="Add a Tournament/Series" component={AddTS} />
+    <Stack.Screen name="Add a Tournament/Series" component={AddTournamentScreen}  options={{ headerShown: false }}d/>
   </Stack.Navigator>
 );
 

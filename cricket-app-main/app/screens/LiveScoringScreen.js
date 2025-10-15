@@ -34,20 +34,111 @@ export default function LiveScoringScreen() {
 
   const matchRef = useRef(null);
 
-  useEffect(() => {
-    if (!matchId) return;
-    const mRef = ref(db, `matches/${matchId}`);
-    matchRef.current = mRef;
+useEffect(() => {
+  let unsub = null;
 
-    const unsub = onValue(mRef, (snap) => {
-      const data = snap.val();
-      setMatch(data || null);
-      setLive((data && data.live) || null);
+  const fetchMatch = async () => {
+    try {
+      let finalMatchId = matchId;
+
+      // 1️⃣ If matchId is undefined, fetch first live match
+      if (!finalMatchId) {
+        const liveRef = ref(db, "liveMatches");
+        const snap = await get(liveRef);
+        const liveMatches = snap.val() || [];
+
+        if (liveMatches.length > 0) {
+          finalMatchId = liveMatches[0]; // pick the first match
+        } else {
+          console.warn("No live matches available");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2️⃣ Subscribe to the match node
+      const mRef = ref(db, `matches/${finalMatchId}`);
+      matchRef.current = mRef;
+
+      unsub = onValue(mRef, (snap) => {
+        const data = snap.val() || {};
+
+        // Normalize players
+        let teamA = [];
+        let teamB = [];
+
+        if (data.players) {
+          if (Array.isArray(data.players)) {
+            teamA = data.players.slice(0, Math.ceil(data.players.length / 2)) || [];
+            teamB = data.players.slice(Math.ceil(data.players.length / 2)) || [];
+          } else {
+            teamA = Array.isArray(data.players.teamA) ? data.players.teamA : [];
+            teamB = Array.isArray(data.players.teamB) ? data.players.teamB : [];
+          }
+        } else {
+          teamA = Array.isArray(data.teamA) ? data.teamA : [];
+          teamB = Array.isArray(data.teamB) ? data.teamB : [];
+        }
+
+        const players = { teamA, teamB };
+
+        const getPlayerId = (team, index) => {
+          if (!team || team.length <= index) return null;
+          const p = team[index];
+          return typeof p === "string" ? p : p?.id || null;
+        };
+
+        const liveData = {
+          currentInnings: data.live?.currentInnings || "A",
+          currentOverBalls: data.live?.currentOverBalls || 0,
+          striker: data.live?.striker || getPlayerId(teamA, 0),
+          nonStriker: data.live?.nonStriker || getPlayerId(teamA, 1),
+          currentBowler: data.live?.currentBowler || null,
+          ballsHistory: data.live?.ballsHistory || {},
+          playerStats: data.live?.playerStats || {},
+          scoreA: data.live?.scoreA || { runs: 0, balls: 0, wickets: 0 },
+          scoreB: data.live?.scoreB || { runs: 0, balls: 0, wickets: 0 },
+          target: data.live?.target || 0,
+        };
+
+        setMatch({ ...data, players });
+        setLive(liveData);
+        setLoading(false);
+
+        if (!data.live) {
+          set(ref(db, `matches/${finalMatchId}/live`), liveData).catch(console.error);
+        }
+
+        [...teamA, ...teamB].forEach((p) => {
+          if (p?.id) incrementMatchesPlayed(p.id).catch(console.error);
+        });
+      });
+    } catch (err) {
+      console.error("Error fetching live match:", err);
       setLoading(false);
-    });
+    }
+  };
 
-    return () => unsub();
-  }, [matchId]);
+  fetchMatch();
+
+  return () => {
+    if (unsub) unsub();
+  };
+}, [matchId]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const writeLivePatch = async (patch) => {
     try {
@@ -57,53 +148,107 @@ export default function LiveScoringScreen() {
     }
   };
 
-  const ensurePlayerStats = async (playerId) => {
-    if (!playerId) return;
-    const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
-    const snap = await get(statRef);
-    if (!snap.exists()) {
-      await set(statRef, {
-        runs: 0,
-        balls: 0, 
-        ballsFaced: 0,
-        fours: 0,
-        sixes: 0,
-        wickets: 0,
-        oversBalls: 0,
-        runsConceded: 0,
-      });
+const ensurePlayerStats = async (playerId) => {
+  if (!playerId) return;
+
+  const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
+  const snap = await get(statRef);
+
+  // ✅ If already exists, do not reset (avoid overwriting stats)
+  if (snap.exists()) return;
+
+  // ✅ Find player info from both teams
+  let player = null;
+  let teamName = "";
+
+  if (match?.players?.teamA) {
+    const p = match.players.teamA.find((x) => x.id === playerId);
+    if (p) {
+      player = p;
+      teamName = match.teamA?.teamName || match.teamA || "";
     }
+  }
+
+  if (!player && match?.players?.teamB) {
+    const p = match.players.teamB.find((x) => x.id === playerId);
+    if (p) {
+      player = p;
+      teamName = match.teamB?.teamName || match.teamB || "";
+    }
+  }
+
+  const playerName = player?.name || "Unknown";
+
+  await set(statRef, {
+    playerId,
+    name: playerName,
+    team: teamName,
+    runs: 0,
+    balls: 0,
+    ballsFaced: 0,
+    fours: 0,
+    sixes: 0,
+    wickets: 0,
+    oversBalls: 0,
+    runsConceded: 0,
+    isOut: false,
+    matchesPlayed: 1, // ✅ new field
+  });
+};
+
+
+
+const incrPlayerStats = async (playerId, patch = {}, playerInfo = {}) => {
+  if (!playerId) return;
+
+  // Make sure entry exists
+  await ensurePlayerStats(playerId);
+
+  const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
+  const snap = await get(statRef);
+  const cur = snap.val() || {
+    name: playerInfo.name || "Unknown",
+    team: playerInfo.team || "Unknown",
+    runs: 0,
+    balls: 0,
+    ballsFaced: 0,
+    fours: 0,
+    sixes: 0,
+    wickets: 0,
+    oversBalls: 0,
+    runsConceded: 0,
   };
 
-  const incrPlayerStats = async (playerId, patch = {}) => {
-    if (!playerId) return;
-    await ensurePlayerStats(playerId);
-    const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
-    const snap = await get(statRef);
-    const cur = snap.val() || {
-      runs: 0,
-      balls: 0,
-      ballsFaced: 0,
-      fours: 0,
-      sixes: 0,
-      wickets: 0,
-      oversBalls: 0,
-      runsConceded: 0,
-    };
+  // ✅ Combine existing + new values
+  const updated = {
+    // keep identity info (player/team)
+    name: playerInfo.name || cur.name || "Unknown",
+    team: playerInfo.team || cur.team || "Unknown",
 
-    const updated = {
-      runs: (cur.runs || 0) + (patch.runs || 0),
-      balls: (cur.balls || 0) + (patch.balls || 0),
-      ballsFaced: (cur.ballsFaced || 0) + (patch.ballsFaced || 0),
-      fours: (cur.fours || 0) + (patch.fours || 0),
-      sixes: (cur.sixes || 0) + (patch.sixes || 0),
-      wickets: (cur.wickets || 0) + (patch.wickets || 0),
-      oversBalls: (cur.oversBalls || 0) + (patch.oversBalls || 0),
-      runsConceded: (cur.runsConceded || 0) + (patch.runsConceded || 0),
-    };
-
-    await set(statRef, updated);
+    // numeric stats
+    runs: (cur.runs || 0) + (patch.runs || 0),
+    balls: (cur.balls || 0) + (patch.balls || 0),
+    ballsFaced: (cur.ballsFaced || 0) + (patch.ballsFaced || 0),
+    fours: (cur.fours || 0) + (patch.fours || 0),
+    sixes: (cur.sixes || 0) + (patch.sixes || 0),
+    wickets: (cur.wickets || 0) + (patch.wickets || 0),
+    oversBalls: (cur.oversBalls || 0) + (patch.oversBalls || 0),
+    runsConceded: (cur.runsConceded || 0) + (patch.runsConceded || 0),
   };
+
+  // ✅ Use update() instead of set() (preserves existing fields)
+  await update(statRef, updated);
+};
+// ✅ Global counter for matches played
+const incrementMatchesPlayed = async (playerId) => {
+  const playerRef = ref(db, `playerStatsGlobal/${playerId}`);
+  const snap = await get(playerRef);
+  const data = snap.val() || { matchesPlayed: 0 };
+  await update(playerRef, {
+    matchesPlayed: (data.matchesPlayed || 0) + 1,
+  });
+};
+
 
   const pushBall = async (ballObj) => {
     const ballRef = push(ref(db, `matches/${matchId}/live/ballsHistory`));
@@ -380,73 +525,66 @@ export default function LiveScoringScreen() {
     Alert.alert("2nd Innings Started", `${match.teamB} chasing ${target}`);
   };
 
- const finalizeMatch = async () => {
+const finalizeMatch = async () => {
   try {
-    const scoreA = live?.scoreA || { runs: 0, wickets: 0, balls: 0 };
-    const scoreB = live?.scoreB || { runs: 0, wickets: 0, balls: 0 };
+    const liveSnap = await get(ref(db, `matches/${matchId}/live`));
+    const liveData = liveSnap.val() || {};
+
+    const scoreA = liveData.scoreA || { runs: 0, wickets: 0, balls: 0 };
+    const scoreB = liveData.scoreB || { runs: 0, wickets: 0, balls: 0 };
+
+    const formatOvers = (balls = 0) => `${Math.floor(balls / 6)}.${balls % 6}`;
+    const oversA = formatOvers(scoreA.balls);
+    const oversB = formatOvers(scoreB.balls);
 
     let winner = "Draw";
-    if (scoreA.runs > scoreB.runs)
-      winner = match.teamA?.teamName || match.teamA;
-    else if (scoreB.runs > scoreA.runs)
-      winner = match.teamB?.teamName || match.teamB;
+    if (scoreA.runs > scoreB.runs) winner = match.teamA.teamName || match.teamA;
+    else if (scoreB.runs > scoreA.runs) winner = match.teamB.teamName || match.teamB;
 
-    const matchPath = match.tournamentId
-      ? `tournaments/${match.tournamentId}/matches/${matchId}`
-      : `matches/${matchId}`;
-
-    const updates = {
+    const finalData = {
       status: "completed",
       winner,
-      teamA: {
-        ...(match.teamA?.teamName ? match.teamA : { teamName: match.teamA }),
-        ...scoreA,
-      },
-      teamB: {
-        ...(match.teamB?.teamName ? match.teamB : { teamName: match.teamB }),
-        ...scoreB,
-      },
-      live: null,
+      scoreA,
+      scoreB,
+      oversA,
+      oversB,
       completedAt: new Date().toISOString(),
+      playerStats: liveData.playerStats || {}, 
     };
 
-    await update(ref(db, matchPath), updates);
+    await update(ref(db, `matches/${matchId}`), finalData);
 
-    await update(ref(db, `matches/${matchId}`), updates);
-
+    
     await update(ref(db, `liveMatches/${matchId}`), {
       status: "completed",
       winner,
-      completedAt: new Date().toISOString(),
-      teamA: updates.teamA,
-      teamB: updates.teamB,
+      scoreA,
+      scoreB,
+      oversA,
+      oversB,
+      completedAt: finalData.completedAt,
     });
 
-    if (match.tournamentId) {
-      await update(ref(db, `tournaments/${match.tournamentId}/matches/${matchId}`), updates);
-    }
 
     if (match.tournamentId) {
-      await update(ref(db, `tournaments/${match.tournamentId}/matches/${matchId}/live`), {
-        scoreA,
-        scoreB,
-        status: "completed",
-      });
+      await update(ref(db, `tournaments/${match.tournamentId}/matches/${matchId}`), finalData);
     }
+
+   
+    await set(ref(db, `matches/${matchId}/live`), null);
 
     Alert.alert("Match Completed!", `Winner: ${winner}`);
-    // navigation.replace("MatchSummaryScreen", {
-    //   matchId,
-    //   winner,
-    //   teamA: updates.teamA,
-    //   teamB: updates.teamB,
-    // });
-
-  } catch (err) {
-    console.error("❌ Finalize Match Error:", err);
-    Alert.alert("Error", err.message);
+       if (match.tournamentId) {
+  navigation.replace("TournamentDetails", { tournamentId: match.tournamentId });
+} else {
+  navigation.replace("Home"); 
+}
+  } catch (error) {
+    console.error("❌ Finalize Match Error:", error);
+    Alert.alert("Error", error.message || "Something went wrong");
   }
 };
+
 
 
   if (loading || !match || !live) {

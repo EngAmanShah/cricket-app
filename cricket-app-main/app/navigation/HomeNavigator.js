@@ -14,6 +14,8 @@ import MatchSummaryScreen from "../screens/MatchSummaryScreen";
 import ScheduleMatchScreen from "../screens/ScheduleMatchScreen";
 import PointsTableScreen from "../screens/SelectPlayersScreen";
 import KnockoutScreen from "../screens/KnockoutScreen";
+import TournamentHome from "../screens/TournamentHome";
+import StartIndividualMatchScreen from "../screens/StartIndividualMatchScreen"; 
 const Stack = createNativeStackNavigator();
 
 const HomeNavigator = () => (
@@ -55,6 +57,12 @@ const HomeNavigator = () => (
 />
 <Stack.Screen name="PointsTableScreen" component={PointsTableScreen} options={{ title: "Points Table" }} />
 <Stack.Screen name="KnockoutScreen" component={KnockoutScreen} />
+ <Stack.Screen name="TournamentHome" component={TournamentHome} options={{ title: "Tournaments" }} />
+    <Stack.Screen 
+      name="StartIndividualMatch" 
+      component={StartIndividualMatchScreen} 
+      options={{ title: "Individual Match" }} 
+    />
   </Stack.Navigator>
 );
 

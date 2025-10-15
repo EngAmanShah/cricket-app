@@ -95,7 +95,7 @@ export default function HomeScreen({ navigation }) {
           />
         </ScrollView>
 
-        {/* ✅ Tournament Section */}
+       
         <Text style={styles.sectionTitle}>Tournaments</Text>
 
       {loading ? (
@@ -103,20 +103,20 @@ export default function HomeScreen({ navigation }) {
 ) : tournaments.length > 0 ? (
   <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 160 }}>
     {tournaments.map((t) => {
-      console.log("Tournament Item:", t); // ✅ Debug each tournament
+      console.log("Tournament Item:", t); 
 
       return (
         <View key={t.id} style={{ position: "relative" }}>
           <TournamentCard
             name={t.name}
-            image={t.logo ? { uri: t.logo } : require("../assets/t1.jpg")} // ✅ use t.logo
-            date={`${t.startDate || t.createdAt} - ${t.endDate || "TBD"}`} // fallback startDate
+            image={t.logo ? { uri: t.logo } : require("../assets/t1.jpg")} 
+            date={`${t.startDate || t.createdAt} - ${t.endDate || "TBD"}`} 
             onPress={() => {
-              console.log("Navigating to TournamentDetails with ID:", t.id); // ✅ Debug navigation
-              navigation.navigate("TournamentDetails", { tournamentId: t.id }); // ✅ pass correct ID
+              console.log("Navigating to TournamentDetails with ID:", t.id);
+              navigation.navigate("TournamentDetails", { tournamentId: t.id });
             }}
           />
-          {/* Status badge */}
+          
           <View style={styles.statusBadge}>
             <Text style={styles.statusText}>{getStatus(t)}</Text>
           </View>
@@ -128,13 +128,13 @@ export default function HomeScreen({ navigation }) {
           <Text style={{ marginLeft: 20, color: "#555" }}>No tournaments available</Text>
         )}
 
-        {/* Clubs Section */}
+       
         <Text style={styles.sectionTitle}>Clubs</Text>
         <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 160 }}>
           <ClubCard name="Hazro Cricket Club" image={require("../assets/t3.jpg")} address="Hazro" />
         </ScrollView>
 
-        {/* Players Section */}
+        
         <Text style={styles.sectionTitle}>Featured Players</Text>
         <ScrollView horizontal contentContainerStyle={{ height: 160, paddingRight: 20 }}>
           <PlayerCard
@@ -147,7 +147,7 @@ export default function HomeScreen({ navigation }) {
           />
         </ScrollView>
 
-        {/* News Section */}
+      
         <Text style={styles.sectionTitle}>News/Blogs</Text>
         <ScrollView horizontal contentContainerStyle={{ paddingRight: 20, height: 200 }}>
           <NewsCard
@@ -157,7 +157,7 @@ export default function HomeScreen({ navigation }) {
           />
         </ScrollView>
 
-        {/* Support Section */}
+       
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.supportBox}>
           <Text style={{ color: "white", fontWeight: "bold", fontSize: 17 }}>

@@ -17,9 +17,8 @@ import { ref, onValue, get, update, set, push } from "firebase/database";
 
 const getGroupWinnersInfo = (allMatches) => {
   return Object.values(allMatches)
-    .filter(m => m.stage === "Group" && m.status === "completed" && m.winner)
-    .map(m => {
- 
+    .filter((m) => m.stage === "Group" && m.status === "completed" && m.winner)
+    .map((m) => {
       let winnerName = null;
       if (m.teamA?.name === m.winner) winnerName = m.teamA.name;
       else if (m.teamB?.name === m.winner) winnerName = m.teamB.name;
@@ -27,12 +26,10 @@ const getGroupWinnersInfo = (allMatches) => {
       return {
         winner: winnerName || m.winner,
         overs: m.overs || 20,
-        venue: m.venue || "TBD"
+        venue: m.venue || "TBD",
       };
     });
 };
-
-
 
 
 const setupKnockoutMatches = async (tournamentId) => {
@@ -41,7 +38,6 @@ const setupKnockoutMatches = async (tournamentId) => {
 
   const allMatches = matchesSnap.val();
   const winnersInfo = getGroupWinnersInfo(allMatches);
-
   if (winnersInfo.length < 2) return;
 
   const quarterFinals = [];
@@ -66,7 +62,6 @@ const setupKnockoutMatches = async (tournamentId) => {
       stage: "Quarter Final",
       teamA: { teamName: qf.teamA },
       teamB: { teamName: qf.teamB },
-
       overs: qf.overs,
       venue: qf.venue,
       status: "upcoming",
@@ -77,56 +72,15 @@ const setupKnockoutMatches = async (tournamentId) => {
   console.log("✅ Knockout matches created with proper team names!");
 };
 
-
-
-const updateNextStageMatch = async (completedMatch, stage) => {
-  try {
-    const tournamentRef = ref(db, `tournaments/${completedMatch.tournamentId}/matches`);
-    const snapshot = await get(tournamentRef);
-    if (!snapshot.exists()) return;
-
-    const matches = Object.entries(snapshot.val() || {}).map(([id, data]) => ({
-      id,
-      ...data,
-    }));
-
-    let nextStage = "";
-    if (stage === "Group") nextStage = "Quarter Final";
-    else if (stage === "Quarter Final") nextStage = "Semi Final";
-    else if (stage === "Semi Final") nextStage = "Final";
-    else return;
-
-    const nextMatches = matches.filter((m) => m.stage === nextStage);
-
-    for (let m of nextMatches) {
-      const teamAName = m.teamA?.teamName;
-      const teamBName = m.teamB?.teamName;
-
-      if ((!teamAName || teamAName === "-") && completedMatch.winner) {
-        await set(ref(db, `matches/${m.id}/teamA`), {
-          teamName: completedMatch.winner,
-        });
-        break;
-      } else if ((!teamBName || teamBName === "-") && completedMatch.winner) {
-        await set(ref(db, `matches/${m.id}/teamB`), {
-          teamName: completedMatch.winner,
-        });
-        break;
-      }
-    }
-  } catch (error) {
-    console.error("Error updating next stage match:", error);
-  }
-};
-
-
-async function generatePointsTable(tournamentId) {
+const generatePointsTable = async (tournamentId) => {
   try {
     const matchesRef = ref(db, "matches");
     const matchesSnapshot = await get(matchesRef);
     if (!matchesSnapshot.exists()) return;
 
     const allMatches = matchesSnapshot.val();
+
+    // Only completed matches for this tournament
     const tournamentMatches = Object.values(allMatches).filter(
       (m) => m.tournamentId === tournamentId && m.status === "completed"
     );
@@ -134,6 +88,8 @@ async function generatePointsTable(tournamentId) {
     if (tournamentMatches.length === 0) return;
 
     const pointsTable = {};
+
+    // Convert balls to overs
     const ballsToOvers = (balls) => (balls ? balls / 6 : 0);
 
     tournamentMatches.forEach((match) => {
@@ -196,19 +152,89 @@ async function generatePointsTable(tournamentId) {
       }
     });
 
+    // Calculate NRR
     Object.values(pointsTable).forEach((team) => {
       const runRateFor = team.oversFaced > 0 ? team.runsScored / team.oversFaced : 0;
       const runRateAgainst = team.oversBowled > 0 ? team.runsConceded / team.oversBowled : 0;
       team.nrr = parseFloat((runRateFor - runRateAgainst).toFixed(3));
     });
 
+    // Sort by points then NRR
+    const sortedPoints = Object.fromEntries(
+      Object.entries(pointsTable).sort(([, a], [, b]) => {
+        if (b.points !== a.points) return b.points - a.points;
+        return b.nrr - a.nrr;
+      })
+    );
+
     const tournamentRef = ref(db, `tournaments/${tournamentId}`);
-    await update(tournamentRef, { pointsTable });
-    console.log("✅ Points table updated successfully!");
+    await update(tournamentRef, { pointsTable: sortedPoints });
+
+    console.log("✅ Points table generated and sorted successfully!");
   } catch (err) {
-    console.error(err);
+    console.error("Error generating points table:", err);
   }
-}
+};
+
+
+
+const calculatePlayerStats = async (tournamentId, setPlayerStats, setPlayerMatchStats) => {
+  try {
+    const matchesRef = ref(db, "matches");
+    const snapshot = await get(matchesRef);
+    if (!snapshot.exists()) return;
+
+    const allMatches = snapshot.val();
+    const tournamentMatches = Object.entries(allMatches)
+      .filter(([id, m]) => m.tournamentId === tournamentId && m.playerStats)
+      .map(([id, m]) => ({ id, ...m }));
+
+    const stats = {}; 
+    const matchStats = {}; 
+
+    tournamentMatches.forEach((match) => {
+      const playerStatsData = match.playerStats || {};
+      Object.entries(playerStatsData).forEach(([playerId, s]) => {
+       
+        if (!stats[playerId]) stats[playerId] = { name: s.name, team: s.team, runs: 0, wickets: 0, fours: 0, sixes: 0 };
+        stats[playerId].runs += s.runs || 0;
+        stats[playerId].wickets += s.wickets || 0;
+        stats[playerId].fours += s.fours || 0;
+        stats[playerId].sixes += s.sixes || 0;
+
+    
+        if (!matchStats[playerId]) matchStats[playerId] = [];
+        matchStats[playerId].push({
+          matchId: match.id,
+          runs: s.runs || 0,
+          wickets: s.wickets || 0,
+          fours: s.fours || 0,
+          sixes: s.sixes || 0,
+          team: s.team,
+        });
+      });
+    });
+
+    const players = Object.values(stats);
+
+    const topRuns = [...players].sort((a, b) => b.runs - a.runs).slice(0, 10);
+    const topWickets = [...players].sort((a, b) => b.wickets - a.wickets).slice(0, 10);
+    const topFours = [...players].sort((a, b) => b.fours - a.fours).slice(0, 10);
+    const topSixes = [...players].sort((a, b) => b.sixes - a.sixes).slice(0, 10);
+
+    setPlayerStats({ topRuns, topWickets, topFours, topSixes });
+    setPlayerMatchStats(matchStats);
+  } catch (error) {
+    console.error("Error calculating player stats:", error);
+  }
+};
+
+const createPointsTable = async (id) => {
+  await generatePointsTable(id);
+  const snapshot = await get(ref(db, `tournaments/${id}`));
+  if(snapshot.exists()) setTournament(snapshot.val());
+};
+
 
 const TournamentDetails = ({ route }) => {
   const { tournamentId } = route.params;
@@ -218,6 +244,15 @@ const TournamentDetails = ({ route }) => {
   const [teams, setTeams] = useState([]);
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [matches, setMatches] = useState([]);
+  const [playerMatchStats, setPlayerMatchStats] = useState({});
+
+  const [playerStats, setPlayerStats] = useState({
+    topRuns: [],
+    topWickets: [],
+    topFours: [],
+    topSixes: [],
+  });
+
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -256,34 +291,23 @@ const TournamentDetails = ({ route }) => {
           .map(([id, m]) => ({
             id,
             ...m,
-          teamA: typeof m.teamA === "string" ? { teamName: m.teamA } : m.teamA || { teamName: null },
-teamB: typeof m.teamB === "string" ? { teamName: m.teamB } : m.teamB || { teamName: null },
-
-            scoreA: m.live?.scoreA || m.scoreA || { runs: 0, wickets: 0, balls: 0 },
-            scoreB: m.live?.scoreB || m.scoreB || { runs: 0, wickets: 0, balls: 0 },
-            overs: m.live?.overs || m.overs || 0,
-            target: m.live?.target || m.target || null,
+            teamA: typeof m.teamA === "string" ? { teamName: m.teamA } : m.teamA || { teamName: null },
+            teamB: typeof m.teamB === "string" ? { teamName: m.teamB } : m.teamB || { teamName: null },
+            scoreA: m.scoreA || { runs: 0, wickets: 0, balls: 0 },
+            scoreB: m.scoreB || { runs: 0, wickets: 0, balls: 0 },
+            overs: m.overs || 0,
             status: m.status || "upcoming",
             winner: m.winner || null,
           }));
 
-        setMatches((prev) => {
-          const updatedMatches = prev.map((match) => {
-            const updated = tournamentMatches.find((m) => m.id === match.id);
-            return updated ? { ...match, ...updated } : match;
-          });
+        setMatches(tournamentMatches);
 
-          const trulyNew = tournamentMatches.filter(
-            (m) => !prev.some((p) => p.id === m.id)
-          );
+        
+        calculatePlayerStats(tournamentId, setPlayerStats, setPlayerMatchStats);
 
-          tournamentMatches.forEach((match) => {
-            if (match.status === "completed") generatePointsTable(tournamentId, match);
-          });
-
-          return [...updatedMatches, ...trulyNew];
-        });
-      } else setMatches([]);
+      } else {
+        setMatches([]);
+      }
       setLoading(false);
     });
 
@@ -292,12 +316,13 @@ teamB: typeof m.teamB === "string" ? { teamName: m.teamB } : m.teamB || { teamNa
       unsubscribeMatches();
     };
   }, [tournamentId]);
-
   const inviteCaptains = () => {
     const message = `🏏 Join the tournament "${tournament.name}"!\nRegister your team now.`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     Linking.canOpenURL(url)
-      .then((supported) => (supported ? Linking.openURL(url) : alert("⚠️ WhatsApp not installed")))
+      .then((supported) =>
+        supported ? Linking.openURL(url) : alert("⚠️ WhatsApp not installed")
+      )
       .catch(console.error);
   };
 
@@ -307,7 +332,8 @@ teamB: typeof m.teamB === "string" ? { teamName: m.teamB } : m.teamB || { teamNa
   if (!tournament)
     return <Text style={{ textAlign: "center", marginTop: 50 }}>Tournament not found!</Text>;
 
-  const tabs = ["Matches", "Teams", "Points Table"];
+ 
+  const tabs = ["Matches", "Teams", "Points Table", "Stats"];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 50 }}>
@@ -324,6 +350,7 @@ teamB: typeof m.teamB === "string" ? { teamName: m.teamB } : m.teamB || { teamNa
         </View>
       </View>
 
+     
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
         {tabs.map((tab) => (
           <TouchableOpacity
@@ -643,49 +670,83 @@ const teamBName = item.teamB?.teamName || "-";
 
 
 
-        {/* Stats Tab */}
-        {/* {activeTab === "Stats" && (
-          <View style={{ alignItems: "center", marginTop: 20, width: "100%" }}>
-            {isOrganizer && (
-              <>
-                <Text style={{ fontWeight: "bold", fontSize: 18, marginBottom: 10 }}>
-                  Tournament Statistics
-                </Text>
-                <Text style={{ color: "#666", marginBottom: 10 }}>
-                  (Auto-updated from Firebase)
-                </Text>
-              </>
-            )}
+       
+       {activeTab === "Stats" && (
+  <View style={{ marginTop: 20, width: "100%", paddingBottom: 30 }}>
+    <Text style={{ fontWeight: "bold", fontSize: 20, textAlign: "center", marginBottom: 15 }}>
+      🏆 Tournament Stats
+    </Text>
 
-            {tournament.stats ? (
-              <View style={styles.tableContainer}>
-                <View style={[styles.tableRow, styles.tableHeader]}>
-                  <Text style={[styles.tableCell, styles.headerText]}>Team</Text>
-                  <Text style={[styles.tableCell, styles.headerText]}>Overall</Text>
-                  <Text style={[styles.tableCell, styles.headerText]}>Sixes</Text>
-                  <Text style={[styles.tableCell, styles.headerText]}>Fours</Text>
-                </View>
+    {/* Top Run Scorers */}
+    <Text style={styles.statsHeading}>🏏 Top Run Scorers</Text>
+  {playerStats.topRuns.length > 0 ? (
+  playerStats.topRuns.map((p, i) => (
+    <View key={i} style={styles.statsRow}>
+      <Text style={styles.statsRank}>{i + 1}.</Text>
+      <Text style={styles.statsPlayer}>{p.name}</Text>
+      <Text style={styles.statsTeam}>({p.team})</Text>
+      <Text style={styles.statsValue}>{p.runs} runs</Text>
 
-                {Object.entries(tournament.stats).map(([teamName, data], index) => (
-                  <View
-                    key={index}
-                    style={[
-                      styles.tableRow,
-                      { backgroundColor: index % 2 === 0 ? "#fafafa" : "#fff" },
-                    ]}
-                  >
-                    <Text style={styles.tableCell}>{teamName}</Text>
-                    <Text style={styles.tableCell}>{data.overall || 0}</Text>
-                    <Text style={styles.tableCell}>{data.sixes || 0}</Text>
-                    <Text style={styles.tableCell}>{data.fours || 0}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={{ color: "#666", marginTop: 10 }}>No stats available yet</Text>
-            )}
-          </View>
-        )} */}
+      {/* Per-match breakdown */}
+      {playerMatchStats[p.name]?.map((m, idx) => (
+        <Text key={idx} style={{ marginLeft: 20, fontSize: 12, color: "#555" }}>
+          Match: {m.matchId} | Runs: {m.runs} | Wkts: {m.wickets} | 4s: {m.fours} | 6s: {m.sixes}
+        </Text>
+      ))}
+    </View>
+  ))
+) : (
+  <Text style={styles.noData}>No data available</Text>
+)}
+
+
+    {/* Top Wicket Takers */}
+    <Text style={styles.statsHeading}>🎯 Top Wicket Takers</Text>
+    {playerStats.topWickets.length > 0 ? (
+      playerStats.topWickets.map((p, i) => (
+        <View key={i} style={styles.statsRow}>
+          <Text style={styles.statsRank}>{i + 1}.</Text>
+          <Text style={styles.statsPlayer}>{p.name}</Text>
+          <Text style={styles.statsTeam}>({p.team})</Text>
+          <Text style={styles.statsValue}>{p.wickets} wkts</Text>
+        </View>
+      ))
+    ) : (
+      <Text style={styles.noData}>No data available</Text>
+    )}
+
+    {/* Most Fours */}
+    <Text style={styles.statsHeading}>🔥 Most Fours</Text>
+    {playerStats.topFours.length > 0 ? (
+      playerStats.topFours.map((p, i) => (
+        <View key={i} style={styles.statsRow}>
+          <Text style={styles.statsRank}>{i + 1}.</Text>
+          <Text style={styles.statsPlayer}>{p.name}</Text>
+          <Text style={styles.statsTeam}>({p.team})</Text>
+          <Text style={styles.statsValue}>{p.fours} fours</Text>
+        </View>
+      ))
+    ) : (
+      <Text style={styles.noData}>No data available</Text>
+    )}
+
+    {/* Most Sixes */}
+    <Text style={styles.statsHeading}>💥 Most Sixes</Text>
+    {playerStats.topSixes.length > 0 ? (
+      playerStats.topSixes.map((p, i) => (
+        <View key={i} style={styles.statsRow}>
+          <Text style={styles.statsRank}>{i + 1}.</Text>
+          <Text style={styles.statsPlayer}>{p.name}</Text>
+          <Text style={styles.statsTeam}>({p.team})</Text>
+          <Text style={styles.statsValue}>{p.sixes} sixes</Text>
+        </View>
+      ))
+    ) : (
+      <Text style={styles.noData}>No data available</Text>
+    )}
+  </View>
+)}
+
 
       
       </View>
@@ -844,7 +905,32 @@ const styles = StyleSheet.create({
     "tied": 0,
     "points": 0
   }
-}
+
+  
+},
+statsHeading: {
+  fontSize: 18,
+  fontWeight: "bold",
+  color: "#007bff",
+  marginVertical: 8,
+  paddingLeft: 5,
+},
+statsRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  paddingVertical: 6,
+  borderBottomWidth: 1,
+  borderBottomColor: "#eee",
+},
+statsRank: { fontWeight: "bold", width: 25, textAlign: "center" },
+statsPlayer: { flex: 1, fontSize: 15, color: "#333" },
+statsTeam: { fontSize: 13, color: "#666", width: 100 },
+statsValue: { fontWeight: "600", color: "#111" },
+noData: { textAlign: "center", color: "#999", marginVertical: 4 },
+
+
+
 
 });
 

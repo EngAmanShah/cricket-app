@@ -74,38 +74,51 @@ const setupKnockoutMatches = async (tournamentId) => {
 
 const generatePointsTable = async (tournamentId) => {
   try {
+    console.log("🔄 Generating points table for tournament:", tournamentId);
+
     const matchesRef = ref(db, "matches");
     const matchesSnapshot = await get(matchesRef);
-    if (!matchesSnapshot.exists()) return;
+
+    if (!matchesSnapshot.exists()) {
+      console.log("❌ No matches found in database!");
+      return;
+    }
 
     const allMatches = matchesSnapshot.val();
 
-    // Only completed matches for this tournament
     const tournamentMatches = Object.values(allMatches).filter(
-      (m) => m.tournamentId === tournamentId && m.status === "completed"
+      (m) => m.tournamentId === tournamentId
     );
 
+    console.log("📊 Matches found for this tournament:", tournamentMatches.length);
     if (tournamentMatches.length === 0) return;
 
     const pointsTable = {};
 
-    // Convert balls to overs
-    const ballsToOvers = (balls) => (balls ? balls / 6 : 0);
+    const getOvers = (score) => {
+      if (!score) return 0;
+      if (typeof score.overs === "number" && typeof score.balls === "number") {
+        return score.overs + score.balls / 6;
+      } else if (typeof score.balls === "number") {
+        return score.balls / 6;
+      } else if (typeof score.overs === "number") {
+        return score.overs;
+      }
+      return 0;
+    };
 
     tournamentMatches.forEach((match) => {
-      const teamA = match.teamA?.teamName || match.teamA?.name;
-      const teamB = match.teamB?.teamName || match.teamB?.name;
+      const teamA = match.teamA?.teamName || match.teamA || "";
+      const teamB = match.teamB?.teamName || match.teamB || "";
       const winner = match.winner;
+      const status = match.status;
 
-      if (!teamA || !teamB) return;
+      if (!teamA.trim() || !teamB.trim()) return;
 
-      const scoreA = match.live?.scoreA || match.scoreA || { runs: 0, balls: 0 };
-      const scoreB = match.live?.scoreB || match.scoreB || { runs: 0, balls: 0 };
-
-      const initTeam = (teamName) => {
-        if (!pointsTable[teamName]) {
-          pointsTable[teamName] = {
-            teamName,
+      const initTeam = (name) => {
+        if (!pointsTable[name]) {
+          pointsTable[name] = {
+            teamName: name,
             played: 0,
             won: 0,
             lost: 0,
@@ -123,15 +136,23 @@ const generatePointsTable = async (tournamentId) => {
       initTeam(teamA);
       initTeam(teamB);
 
-      pointsTable[teamA].runsScored += scoreA.runs;
-      pointsTable[teamA].oversFaced += ballsToOvers(scoreA.balls);
-      pointsTable[teamA].runsConceded += scoreB.runs;
-      pointsTable[teamA].oversBowled += ballsToOvers(scoreB.balls);
+      if (status !== "completed") return;
 
-      pointsTable[teamB].runsScored += scoreB.runs;
-      pointsTable[teamB].oversFaced += ballsToOvers(scoreB.balls);
-      pointsTable[teamB].runsConceded += scoreA.runs;
-      pointsTable[teamB].oversBowled += ballsToOvers(scoreA.balls);
+      const scoreA = match.scoreA || match.live?.scoreA || {};
+      const scoreB = match.scoreB || match.live?.scoreB || {};
+
+      const oversA = getOvers(scoreA);
+      const oversB = getOvers(scoreB);
+
+      pointsTable[teamA].runsScored += scoreA.runs || 0;
+      pointsTable[teamA].oversFaced += oversA;
+      pointsTable[teamA].runsConceded += scoreB.runs || 0;
+      pointsTable[teamA].oversBowled += oversB;
+
+      pointsTable[teamB].runsScored += scoreB.runs || 0;
+      pointsTable[teamB].oversFaced += oversB;
+      pointsTable[teamB].runsConceded += scoreA.runs || 0;
+      pointsTable[teamB].oversBowled += oversA;
 
       pointsTable[teamA].played += 1;
       pointsTable[teamB].played += 1;
@@ -152,14 +173,12 @@ const generatePointsTable = async (tournamentId) => {
       }
     });
 
-    // Calculate NRR
     Object.values(pointsTable).forEach((team) => {
-      const runRateFor = team.oversFaced > 0 ? team.runsScored / team.oversFaced : 0;
-      const runRateAgainst = team.oversBowled > 0 ? team.runsConceded / team.oversBowled : 0;
-      team.nrr = parseFloat((runRateFor - runRateAgainst).toFixed(3));
+      const rrFor = team.oversFaced > 0 ? team.runsScored / team.oversFaced : 0;
+      const rrAgainst = team.oversBowled > 0 ? team.runsConceded / team.oversBowled : 0;
+      team.nrr = parseFloat((rrFor - rrAgainst).toFixed(3));
     });
 
-    // Sort by points then NRR
     const sortedPoints = Object.fromEntries(
       Object.entries(pointsTable).sort(([, a], [, b]) => {
         if (b.points !== a.points) return b.points - a.points;
@@ -167,14 +186,18 @@ const generatePointsTable = async (tournamentId) => {
       })
     );
 
+    console.log("📊 Final points table data:", sortedPoints);
+
     const tournamentRef = ref(db, `tournaments/${tournamentId}`);
     await update(tournamentRef, { pointsTable: sortedPoints });
 
-    console.log("✅ Points table generated and sorted successfully!");
+    console.log("✅ Points table created successfully!");
   } catch (err) {
-    console.error("Error generating points table:", err);
+    console.error("❌ Error generating points table:", err);
   }
 };
+
+
 
 
 
@@ -229,11 +252,8 @@ const calculatePlayerStats = async (tournamentId, setPlayerStats, setPlayerMatch
   }
 };
 
-const createPointsTable = async (id) => {
-  await generatePointsTable(id);
-  const snapshot = await get(ref(db, `tournaments/${id}`));
-  if(snapshot.exists()) setTournament(snapshot.val());
-};
+
+
 
 
 const TournamentDetails = ({ route }) => {
@@ -246,6 +266,19 @@ const TournamentDetails = ({ route }) => {
   const [matches, setMatches] = useState([]);
   const [playerMatchStats, setPlayerMatchStats] = useState({});
 
+  const createPointsTable = async () => {
+    try {
+      console.log("Creating points table for:", tournamentId);
+      await generatePointsTable(tournamentId);
+      const snapshot = await get(ref(db, `tournaments/${tournamentId}`));
+      if (snapshot.exists()) {
+        console.log("Tournament updated with new points table");
+        setTournament(snapshot.val());
+      }
+    } catch (e) {
+      console.error("Error in createPointsTable:", e);
+    }
+  };
   const [playerStats, setPlayerStats] = useState({
     topRuns: [],
     topWickets: [],
@@ -586,7 +619,9 @@ const teamBName = item.teamB?.teamName || "-";
     {!tournament.pointsTable ? (
       <TouchableOpacity
         style={[styles.button, { width: "80%", backgroundColor: "#ff9800", marginBottom: 10 }]}
-        onPress={() => createPointsTable(tournamentId)}
+        onPress={() => createPointsTable()}
+
+
       >
         <Text style={styles.buttonText}>Create Points Table</Text>
       </TouchableOpacity>

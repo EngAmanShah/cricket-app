@@ -41,14 +41,13 @@ useEffect(() => {
     try {
       let finalMatchId = matchId;
 
-      // 1️⃣ If matchId is undefined, fetch first live match
       if (!finalMatchId) {
         const liveRef = ref(db, "liveMatches");
         const snap = await get(liveRef);
         const liveMatches = snap.val() || [];
 
         if (liveMatches.length > 0) {
-          finalMatchId = liveMatches[0]; // pick the first match
+          finalMatchId = liveMatches[0]; 
         } else {
           console.warn("No live matches available");
           setLoading(false);
@@ -56,14 +55,12 @@ useEffect(() => {
         }
       }
 
-      // 2️⃣ Subscribe to the match node
       const mRef = ref(db, `matches/${finalMatchId}`);
       matchRef.current = mRef;
 
       unsub = onValue(mRef, (snap) => {
         const data = snap.val() || {};
 
-        // Normalize players
         let teamA = [];
         let teamB = [];
 
@@ -126,20 +123,6 @@ useEffect(() => {
   };
 }, [matchId]);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   const writeLivePatch = async (patch) => {
     try {
       await update(ref(db, `matches/${matchId}/live`), patch);
@@ -154,10 +137,8 @@ const ensurePlayerStats = async (playerId) => {
   const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
   const snap = await get(statRef);
 
-  // ✅ If already exists, do not reset (avoid overwriting stats)
   if (snap.exists()) return;
 
-  // ✅ Find player info from both teams
   let player = null;
   let teamName = "";
 
@@ -192,7 +173,7 @@ const ensurePlayerStats = async (playerId) => {
     oversBalls: 0,
     runsConceded: 0,
     isOut: false,
-    matchesPlayed: 1, // ✅ new field
+    matchesPlayed: 1, 
   });
 };
 
@@ -201,7 +182,6 @@ const ensurePlayerStats = async (playerId) => {
 const incrPlayerStats = async (playerId, patch = {}, playerInfo = {}) => {
   if (!playerId) return;
 
-  // Make sure entry exists
   await ensurePlayerStats(playerId);
 
   const statRef = ref(db, `matches/${matchId}/live/playerStats/${playerId}`);
@@ -219,13 +199,10 @@ const incrPlayerStats = async (playerId, patch = {}, playerInfo = {}) => {
     runsConceded: 0,
   };
 
-  // ✅ Combine existing + new values
   const updated = {
-    // keep identity info (player/team)
     name: playerInfo.name || cur.name || "Unknown",
     team: playerInfo.team || cur.team || "Unknown",
 
-    // numeric stats
     runs: (cur.runs || 0) + (patch.runs || 0),
     balls: (cur.balls || 0) + (patch.balls || 0),
     ballsFaced: (cur.ballsFaced || 0) + (patch.ballsFaced || 0),
@@ -236,10 +213,8 @@ const incrPlayerStats = async (playerId, patch = {}, playerInfo = {}) => {
     runsConceded: (cur.runsConceded || 0) + (patch.runsConceded || 0),
   };
 
-  // ✅ Use update() instead of set() (preserves existing fields)
   await update(statRef, updated);
 };
-// ✅ Global counter for matches played
 const incrementMatchesPlayed = async (playerId) => {
   const playerRef = ref(db, `playerStatsGlobal/${playerId}`);
   const snap = await get(playerRef);
@@ -295,173 +270,159 @@ const incrementMatchesPlayed = async (playerId) => {
     }
   };
 
-  const onLegalBall = async (runs = 0) => {
-    const curLive = { ...live }; 
+  const patchLive = async (patch) => {
+  setLive(prev => ({ ...prev, ...patch }));
+  try {
+    await update(ref(db, `matches/${matchId}/live`), patch);
+  } catch (err) {
+    console.error("Live update error:", err);
+  }
+};
 
-    if (!curLive.striker) return Alert.alert("Select Striker first");
-    if (!curLive.currentBowler) {
-      setAvailableBowlers(
-        match.players[curLive.currentInnings === "A" ? "teamB" : "teamA"] || []
-      );
-      setBowlerModalVisible(true);
-      return Alert.alert("Select Bowler first for next over");
-    }
 
-    const innings = curLive.currentInnings || "A";
-    const scoreKey = innings === "A" ? "scoreA" : "scoreB";
-    const curScore = curLive[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
+ const onLegalBall = async (runs = 0) => {
+  const curLive = { ...live };
+  if (!curLive.striker) return Alert.alert("Select Striker first");
+  if (!curLive.currentBowler) {
+    setAvailableBowlers(match.players[curLive.currentInnings === "A" ? "teamB" : "teamA"] || []);
+    setBowlerModalVisible(true);
+    return Alert.alert("Select Bowler first for next over");
+  }
 
-    const newRuns = (curScore.runs || 0) + runs;
-    const newBalls = (curScore.balls || 0) + 1;
-    const newWickets = curScore.wickets || 0;
+  const innings = curLive.currentInnings || "A";
+  const scoreKey = innings === "A" ? "scoreA" : "scoreB";
+  const curScore = curLive[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
 
-    const lastBall = {
-      type: "legal",
-      runs,
-      extra: 0,
-      wicketType: null,
-      striker: curLive.striker,
-      bowler: curLive.currentBowler,
-      timestamp: new Date().toISOString(),
-    };
+  const newRuns = (curScore.runs || 0) + runs;
+  const newBalls = (curScore.balls || 0) + 1;
+  const newWickets = curScore.wickets || 0;
 
-    await writeLivePatch({
-      [`${scoreKey}/runs`]: newRuns,
-      [`${scoreKey}/balls`]: newBalls,
-      lastBall,
-      currentOverBalls: ((curLive.currentOverBalls || 0) + 1) % 6,
-    });
-
-    await pushBall(lastBall);
-
-    await incrPlayerStats(curLive.striker, {
-      runs,
-      balls: 1,
-      ballsFaced: 1,
-      fours: runs === 4 ? 1 : 0,
-      sixes: runs === 6 ? 1 : 0,
-    });
-
-    await incrPlayerStats(curLive.currentBowler, {
-      oversBalls: 1,
-      runsConceded: runs,
-    });
-
-    if (runs % 2 === 1) {
-      await writeLivePatch({
-        striker: curLive.nonStriker,
-        nonStriker: curLive.striker,
-      });
-    }
-
-    const curOverBalls = ((curLive.currentOverBalls || 0) + 1) % 6;
-
-    if (curOverBalls === 0) {
-
-      await writeLivePatch({ currentBowler: null });
-      setAvailableBowlers(
-        match.players[innings === "A" ? "teamB" : "teamA"] || []
-      );
-      setBowlerModalVisible(true);
-    }
-
-    await checkInningsEnd(newBalls, newWickets, innings, newRuns);
+  const lastBall = {
+    type: "legal",
+    runs,
+    extra: 0,
+    wicketType: null,
+    striker: curLive.striker,
+    bowler: curLive.currentBowler,
+    timestamp: new Date().toISOString(),
   };
 
-  const onWicket = async (wicketType = "caught") => {
-    const curLive = { ...live };
-    if (!curLive || !curLive.striker) return Alert.alert("Select striker first");
+  await patchLive({
+    [`${scoreKey}/runs`]: newRuns,
+    [`${scoreKey}/balls`]: newBalls,
+    lastBall,
+    currentOverBalls: ((curLive.currentOverBalls || 0) + 1) % 6,
+  });
 
-    const innings = curLive.currentInnings || "A";
-    const scoreKey = innings === "A" ? "scoreA" : "scoreB";
-    const curScore = curLive[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
+  await incrPlayerStats(curLive.striker, {
+    runs,
+    balls: 1,
+    ballsFaced: 1,
+    fours: runs === 4 ? 1 : 0,
+    sixes: runs === 6 ? 1 : 0,
+  });
 
-    const newBalls = (curScore.balls || 0) + 1;
-    const newWickets = (curScore.wickets || 0) + 1;
+  await incrPlayerStats(curLive.currentBowler, {
+    oversBalls: 1,
+    runsConceded: runs,
+  });
 
-    const lastBall = {
-      type: "wicket",
-      runs: 0,
-      extra: 0,
-      wicketType,
-      striker: curLive.striker,
-      bowler: curLive.currentBowler,
-      timestamp: new Date().toISOString(),
-    };
-
-    await writeLivePatch({
-      [`${scoreKey}/balls`]: newBalls,
-      [`${scoreKey}/wickets`]: newWickets,
-      lastBall,
-      currentOverBalls: ((curLive.currentOverBalls || 0) + 1) % 6,
+  if (runs % 2 === 1) {
+    await patchLive({
+      striker: curLive.nonStriker,
+      nonStriker: curLive.striker,
     });
-    await pushBall(lastBall);
+  }
 
-    
-    if (curLive.currentBowler)
-      await incrPlayerStats(curLive.currentBowler, { wickets: 1 });
+  const curOverBalls = ((curLive.currentOverBalls || 0) + 1) % 6;
+
+  if (curOverBalls === 0) {
+    await patchLive({ currentBowler: null });
+    setAvailableBowlers(match.players[innings === "A" ? "teamB" : "teamA"] || []);
+    setBowlerModalVisible(true);
+  }
+
+  await checkInningsEnd(newBalls, newWickets, innings, newRuns);
+};
 
 
-    await incrPlayerStats(curLive.striker, { balls: 1, ballsFaced: 1 });
+const onWicket = async (wicketType = "caught") => {
+  const curLive = { ...live };
+  if (!curLive.striker) return Alert.alert("Select striker first");
 
-    setOutBatsmanId(curLive.striker);
+  const innings = curLive.currentInnings || "A";
+  const scoreKey = innings === "A" ? "scoreA" : "scoreB";
+  const curScore = curLive[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
 
-    const battingTeamKey = innings === "A" ? "teamA" : "teamB";
-    setAvailableBatsmen(
-      match.players[battingTeamKey].filter(
-        (p) => p.id !== curLive.striker && p.id !== curLive.nonStriker
-      )
-    );
-    setNextBatsmanModalVisible(true);
+  const newBalls = (curScore.balls || 0) + 1;
+  const newWickets = (curScore.wickets || 0) + 1;
 
-    await checkInningsEnd(newBalls, newWickets, innings, curScore.runs);
+  const lastBall = {
+    type: "wicket",
+    runs: 0,
+    extra: 0,
+    wicketType,
+    striker: curLive.striker,
+    bowler: curLive.currentBowler,
+    timestamp: new Date().toISOString(),
   };
 
+  await patchLive({
+    [`${scoreKey}/balls`]: newBalls,
+    [`${scoreKey}/wickets`]: newWickets,
+    lastBall,
+    currentOverBalls: ((curLive.currentOverBalls || 0) + 1) % 6,
+  });
 
-  const onExtra = async (type = "WD", runs = 1) => {
-    if (!live || !live.currentBowler) return Alert.alert("Select bowler first");
+  await incrPlayerStats(curLive.striker, { balls: 1, ballsFaced: 1 });
+  if (curLive.currentBowler) await incrPlayerStats(curLive.currentBowler, { wickets: 1 });
 
-    const innings = live.currentInnings || "A";
-    const scoreKey = innings === "A" ? "scoreA" : "scoreB";
-    const curScore = live[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
-    const newRuns = (curScore.runs || 0) + runs;
+  setOutBatsmanId(curLive.striker);
 
-    const lastBall = {
-      type: type.toLowerCase(),
-      runs,
-      extra: 1,
-      wicketType: null,
-      striker: live.striker,
-      bowler: live.currentBowler,
-      timestamp: new Date().toISOString(),
-    };
+  const battingTeamKey = innings === "A" ? "teamA" : "teamB";
+  setAvailableBatsmen(
+    match.players[battingTeamKey].filter(
+      (p) => p.id !== curLive.striker && p.id !== curLive.nonStriker
+    )
+  );
+  setNextBatsmanModalVisible(true);
 
-    try {
-      await writeLivePatch({
-        [`${scoreKey}/runs`]: newRuns,
-        lastBall,
-      });
-
-      await pushBall(lastBall);
-
-      
-      await incrPlayerStats(live.currentBowler, {
-        runsConceded: runs,
-      });
+  await checkInningsEnd(newBalls, newWickets, innings, curScore.runs);
+};
 
 
-      if (innings === "B") {
-        const target = live?.target || 0;
-        if (newRuns >= target) {
-          Alert.alert("Match Completed", `${match.teamB} won while chasing!`);
-          await finalizeMatch();
-          return;
-        }
-      }
-    } catch (err) {
-      console.error("onExtra error", err);
-    }
+const onExtra = async (type = "WD", runs = 1) => {
+  const curLive = { ...live };
+  if (!curLive.currentBowler) return Alert.alert("Select bowler first");
+
+  const innings = curLive.currentInnings || "A";
+  const scoreKey = innings === "A" ? "scoreA" : "scoreB";
+  const curScore = curLive[scoreKey] || { runs: 0, balls: 0, wickets: 0 };
+  const newRuns = (curScore.runs || 0) + runs;
+
+  const lastBall = {
+    type: type.toLowerCase(),
+    runs,
+    extra: 1,
+    wicketType: null,
+    striker: curLive.striker,
+    bowler: curLive.currentBowler,
+    timestamp: new Date().toISOString(),
   };
+
+  await patchLive({
+    [`${scoreKey}/runs`]: newRuns,
+    lastBall,
+  });
+
+  await incrPlayerStats(curLive.currentBowler, { runsConceded: runs });
+
+  if (innings === "B" && newRuns >= (curLive.target || 0)) {
+    Alert.alert("Match Completed", `${match.teamB} won while chasing!`);
+    await finalizeMatch();
+  }
+};
+
 
   const handleSelectNextBatsman = async (player) => {
     setNextBatsmanModalVisible(false);
@@ -718,7 +679,6 @@ const finalizeMatch = async () => {
         <Text style={styles.bowlerText}>Select Bowler</Text>
       </TouchableOpacity>
 
-      {/* Last Balls */}
       <Text style={{ fontWeight: "700", marginTop: 16 }}>Last Balls</Text>
       <ScrollView horizontal style={{ marginTop: 6 }}>
         {lastBalls.map((b, i) => (

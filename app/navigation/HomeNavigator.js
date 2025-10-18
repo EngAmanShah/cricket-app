@@ -16,6 +16,9 @@ import PointsTableScreen from "../screens/SelectPlayersScreen";
 import KnockoutScreen from "../screens/KnockoutScreen";
 import TournamentHome from "../screens/TournamentHome";
 import StartIndividualMatchScreen from "../screens/StartIndividualMatchScreen"; 
+import LiveIndividualMatchScreen from "../screens/LiveIndividualMatchScreen";
+import IndividualTossScreen from "../screens/IndividualTossScreen";
+import individualPlayerList from "../screens/IndividualPlayerList";
 const Stack = createNativeStackNavigator();
 
 const HomeNavigator = () => (
@@ -63,6 +66,13 @@ const HomeNavigator = () => (
       component={StartIndividualMatchScreen} 
       options={{ title: "Individual Match" }} 
     />
+    <Stack.Screen
+  name="LiveIndividualMatch"
+  component={LiveIndividualMatchScreen}
+  options={{ title: "Live Individual Match" }}
+/>
+    <Stack.Screen name="IndividualToss" component={IndividualTossScreen} />
+    <Stack.Screen name="IndividualPlayerList" component={individualPlayerList} />
   </Stack.Navigator>
 );
 

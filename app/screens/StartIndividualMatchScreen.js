@@ -1,4 +1,3 @@
-// screens/StartIndividualMatchScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -14,7 +13,7 @@ import {
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { db } from "../config/firebase-config";
-import { ref, onValue, update, get, push } from "firebase/database";
+import { ref, onValue, update, get, push,set } from "firebase/database";
 
 export default function StartIndividualMatchScreen() {
   const navigation = useNavigation();
@@ -34,7 +33,6 @@ export default function StartIndividualMatchScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectingFor, setSelectingFor] = useState("A");
 
-  // Fetch all teams from all tournaments
   useEffect(() => {
     const tournamentsRef = ref(db, `tournaments`);
     onValue(tournamentsRef, (snapshot) => {
@@ -62,7 +60,6 @@ export default function StartIndividualMatchScreen() {
     });
   }, []);
 
-  // Fetch existing match details if matchId is provided
   useEffect(() => {
     if (!matchId) {
       setLoading(false);
@@ -74,7 +71,6 @@ export default function StartIndividualMatchScreen() {
       if (snapshot.exists()) {
         const data = snapshot.val();
 
-        // Team A
         if (data.teamA) {
           const captainA = data.teamA.captain
             ? {
@@ -97,7 +93,6 @@ export default function StartIndividualMatchScreen() {
           });
         }
 
-        // Team B
         if (data.teamB) {
           const captainB = data.teamB.captain
             ? {
@@ -135,10 +130,14 @@ export default function StartIndividualMatchScreen() {
 
 const handleNext = async () => {
   try {
+    console.log("🚀 Starting handleNext...");
+
     if (!teamA || !teamB) {
       Alert.alert("Error", "Please select both teams.");
       return;
     }
+
+    console.log("✅ Teams selected:", teamA?.teamName, "vs", teamB?.teamName);
 
     const today = new Date();
     const formattedDate = matchDate || today.toISOString().split("T")[0];
@@ -148,11 +147,14 @@ const handleNext = async () => {
       : push(ref(db, "matches"));
     const newMatchId = newMatchRef.key;
 
+    console.log("📁 New match ID:", newMatchId);
+
     const snapshot = await get(newMatchRef);
     const existingData = snapshot.exists() ? snapshot.val() : {};
     const newStatus = existingData.status === "completed" ? "completed" : "live";
 
-    // Helper to normalize team players with captain
+    console.log("📄 Existing data found:", snapshot.exists());
+
     const normalizeTeam = (team, captainId) => {
       const players = team.players ? Object.values(team.players) : [];
 
@@ -174,7 +176,7 @@ const handleNext = async () => {
     const normalizedTeamA = normalizeTeam(teamA, "captainA");
     const normalizedTeamB = normalizeTeam(teamB, "captainB");
 
-    await update(newMatchRef, {
+    const matchData = {
       id: newMatchId,
       teamA: normalizedTeamA,
       teamB: normalizedTeamB,
@@ -194,11 +196,23 @@ const handleNext = async () => {
         currentInnings: "A",
         playerStats: {},
       },
-    });
+    };
+
+    console.log("🧾 Final match data ready:", matchData);
+
+    if (!matchId) {
+      console.log("🆕 Creating new match...");
+      await set(newMatchRef, matchData);
+    } else {
+      console.log("🔁 Updating existing match...");
+      await update(newMatchRef, matchData);
+    }
+
+    console.log("✅ Match successfully written to Firebase!");
 
     Alert.alert("Match Started!", "You can now select players.");
 
-    navigation.navigate("SelectPlayersScreen", {
+    navigation.navigate("IndividualPlayerList", {
       matchId: newMatchId,
       teamA: normalizedTeamA,
       teamB: normalizedTeamB,
@@ -207,14 +221,14 @@ const handleNext = async () => {
       format,
     });
   } catch (err) {
-    console.error(err);
+    console.error("🔥 Error in handleNext:", err);
     Alert.alert("Error", err.message);
   }
 };
 
 
+
 const handleTeamSelect = (team) => {
-  // Add captain to players if missing
   let players = team.players ? Object.values(team.players) : [];
 
   if (team.captainName && !players.some(p => p.name === team.captainName)) {
@@ -273,7 +287,6 @@ const handleTeamSelect = (team) => {
       <Text style={styles.title}>🏏 Start Individual Match</Text>
 
       <View style={styles.teamsContainer}>
-        {/* Team A */}
         <View style={styles.teamCard}>
           <Image
             source={{
@@ -302,7 +315,6 @@ const handleTeamSelect = (team) => {
 
         <Text style={styles.vsText}>VS</Text>
 
-        {/* Team B */}
         <View style={styles.teamCard}>
           <Image
             source={{
@@ -330,7 +342,6 @@ const handleTeamSelect = (team) => {
         </View>
       </View>
 
-      {/* Match info */}
       <View style={styles.infoBox}>
         <Text style={styles.fieldHeader}>🏟 Venue:</Text>
         <TextInput
@@ -384,7 +395,6 @@ const handleTeamSelect = (team) => {
         <Text style={styles.nextText}>Next → Select Players</Text>
       </TouchableOpacity>
 
-      {/* Team selection modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -414,7 +424,6 @@ const handleTeamSelect = (team) => {
   );
 }
 
-// --- Styles ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 16 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },

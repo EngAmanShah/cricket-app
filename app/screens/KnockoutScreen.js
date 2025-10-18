@@ -1,4 +1,3 @@
-// screens/KnockoutScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -12,7 +11,7 @@ import {
 import { ref, get, set, push, update, onValue } from "firebase/database";
 import { db } from "../config/firebase-config";
 
-export default function KnockoutScreen({ route, navigation }) {
+export default function KnockoutScreen({ route }) {
   const { tournamentId } = route.params;
   const [loading, setLoading] = useState(false);
   const [matches, setMatches] = useState([]);
@@ -31,45 +30,16 @@ export default function KnockoutScreen({ route, navigation }) {
         setMatches([]);
         return;
       }
-
       const allMatches = Object.entries(snap.val()).map(([id, m]) => ({
         id,
         ...m,
       }));
-
       const knockout = allMatches.filter(
         (m) =>
           m.tournamentId === tournamentId &&
           ["Quarter Final", "Semi Final", "Final"].includes(m.stage)
       );
-
-      const merged = knockout.map((m) => {
-        const teamA = m.teamA?.teamName?.trim()?.toLowerCase();
-        const teamB = m.teamB?.teamName?.trim()?.toLowerCase();
-
-        const completed = allMatches.find(
-          (x) =>
-            x.tournamentId === tournamentId &&
-            x.status === "complete" &&
-            x.stage === m.stage &&
-            (
-              (x.teamA?.teamName?.trim()?.toLowerCase() === teamA &&
-                x.teamB?.teamName?.trim()?.toLowerCase() === teamB) ||
-              (x.teamA?.teamName?.trim()?.toLowerCase() === teamB &&
-                x.teamB?.teamName?.trim()?.toLowerCase() === teamA)
-            )
-        );
-
-        return completed
-          ? {
-              ...m,
-              ...completed,
-              status: "complete",
-            }
-          : m;
-      });
-
-      setMatches(merged);
+      setMatches(knockout);
     });
 
     return () => {
@@ -78,129 +48,130 @@ export default function KnockoutScreen({ route, navigation }) {
     };
   }, [tournamentId]);
 
-  const generateQuarterFinals = async () => {
+  const generateNextKnockoutStage = async () => {
     if (!tournament) return;
     try {
       setLoading(true);
       const points = tournament.pointsTable || {};
-      const sorted = Object.values(points).sort(
+      const sortedTeams = Object.values(points).sort(
         (a, b) => b.points - a.points || b.nrr - a.nrr
       );
-      const top8 = sorted.slice(0, 8);
 
-      if (top8.length < 8)
-        return Alert.alert("⚠️ Not enough teams for Quarter Finals (need 8)");
+      const snap = await get(ref(db, "matches"));
+      const allMatches = snap.exists()
+        ? Object.entries(snap.val()).map(([id, m]) => ({ id, ...m }))
+        : [];
 
-      const created = [];
-      for (let i = 0; i < top8.length; i += 2) {
-        const match = {
+      const qf = allMatches.filter(
+        (m) => m.tournamentId === tournamentId && m.stage === "Quarter Final"
+      );
+      const semi = allMatches.filter(
+        (m) => m.tournamentId === tournamentId && m.stage === "Semi Final"
+      );
+      const final = allMatches.filter(
+        (m) => m.tournamentId === tournamentId && m.stage === "Final"
+      );
+
+      if (qf.length === 0 && sortedTeams.length >= 8) {
+        const top8 = sortedTeams.slice(0, 8);
+        const created = [];
+        for (let i = 0; i < top8.length; i += 2) {
+          const match = {
+            tournamentId,
+            stage: "Quarter Final",
+            teamA: { teamName: top8[i].teamName },
+            teamB: { teamName: top8[i + 1].teamName },
+            status: "upcoming",
+            createdAt: new Date().toISOString(),
+          };
+          const newRef = push(ref(db, "matches"));
+          await set(newRef, match);
+          created.push(newRef.key);
+        }
+        await update(ref(db, `tournaments/${tournamentId}`), {
+          quarterFinals: created,
+          knockoutStage: "Quarter Final",
+        });
+        Alert.alert("✅ Quarter Finals Created!");
+        return;
+      }
+
+      const qfCompleted = allMatches
+        .filter(
+          (m) =>
+            m.tournamentId === tournamentId &&
+            m.stage === "Quarter Final" &&
+            (m.status === "completed" || m.status === "complete") &&
+            m.winner
+        )
+        .map((m) => m.winner);
+
+      const semiStage = allMatches.filter(
+        (m) => m.tournamentId === tournamentId && m.stage === "Semi Final"
+      );
+
+      let semiTeams = [];
+      if (qfCompleted.length >= 2) semiTeams = qfCompleted;
+      else if (sortedTeams.length >= 2) semiTeams = sortedTeams.map((t) => t.teamName);
+
+      if (semiStage.length === 0 && semiTeams.length >= 2) {
+        const created = [];
+        for (let i = 0; i < semiTeams.length; i += 2) {
+          if (!semiTeams[i + 1]) break;
+          const match = {
+            tournamentId,
+            stage: "Semi Final",
+            teamA: { teamName: semiTeams[i] },
+            teamB: { teamName: semiTeams[i + 1] },
+            status: "upcoming",
+            createdAt: new Date().toISOString(),
+          };
+          const newRef = push(ref(db, "matches"));
+          await set(newRef, match);
+          created.push(newRef.key);
+        }
+        await update(ref(db, `tournaments/${tournamentId}`), {
+          semiFinals: created,
+          knockoutStage: "Semi Final",
+        });
+        Alert.alert("✅ Semi Finals Created!");
+        return;
+      }
+
+      const semiCompleted = allMatches
+        .filter(
+          (m) =>
+            m.tournamentId === tournamentId &&
+            m.stage === "Semi Final" &&
+            (m.status === "completed" || m.status === "complete") &&
+            m.winner
+        )
+        .map((m) => m.winner);
+
+      const finalStage = allMatches.filter(
+        (m) => m.tournamentId === tournamentId && m.stage === "Final"
+      );
+
+      if (finalStage.length === 0 && semiCompleted.length >= 2) {
+        const finalMatch = {
           tournamentId,
-          stage: "Quarter Final",
-          teamA: { teamName: top8[i].teamName },
-          teamB: { teamName: top8[i + 1].teamName },
+          stage: "Final",
+          teamA: { teamName: semiCompleted[0] },
+          teamB: { teamName: semiCompleted[1] },
           status: "upcoming",
           createdAt: new Date().toISOString(),
         };
         const newRef = push(ref(db, "matches"));
-        await set(newRef, match);
-        created.push(newRef.key);
+        await set(newRef, finalMatch);
+        await update(ref(db, `tournaments/${tournamentId}`), {
+          finalMatch: newRef.key,
+          knockoutStage: "Final",
+        });
+        Alert.alert("🏆 Final Created!");
+        return;
       }
 
-      await update(ref(db, `tournaments/${tournamentId}`), {
-        quarterFinals: created,
-        knockoutStage: "Quarter Final",
-      });
-      Alert.alert("✅ Quarter Finals Created!");
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateSemiFinals = async () => {
-    try {
-      setLoading(true);
-      const snap = await get(ref(db, "matches"));
-      if (!snap.exists()) return;
-
-      const all = Object.entries(snap.val()).map(([id, m]) => ({ id, ...m }));
-      const qfCompleted = all.filter(
-        (m) =>
-          m.tournamentId === tournamentId &&
-          m.stage === "Quarter Final" &&
-          (m.status === "completed" || m.status === "complete") &&
-          m.winner
-      );
-
-      if (qfCompleted.length < 4)
-        return Alert.alert("⚠️ Quarter Finals not completed yet");
-
-      const winners = qfCompleted.map((m) => m.winner);
-      const created = [];
-
-      for (let i = 0; i < winners.length; i += 2) {
-        const match = {
-          tournamentId,
-          stage: "Semi Final",
-          teamA: { teamName: winners[i] },
-          teamB: { teamName: winners[i + 1] },
-          status: "upcoming",
-          createdAt: new Date().toISOString(),
-        };
-        const newRef = push(ref(db, "matches"));
-        await set(newRef, match);
-        created.push(newRef.key);
-      }
-
-      await update(ref(db, `tournaments/${tournamentId}`), {
-        semiFinals: created,
-        knockoutStage: "Semi Final",
-      });
-      Alert.alert("✅ Semi Finals Created!");
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateFinal = async () => {
-    try {
-      setLoading(true);
-      const snap = await get(ref(db, "matches"));
-      if (!snap.exists()) return;
-
-      const all = Object.entries(snap.val()).map(([id, m]) => ({ id, ...m }));
-      const semiCompleted = all.filter(
-        (m) =>
-          m.tournamentId === tournamentId &&
-          m.stage === "Semi Final" &&
-          (m.status === "completed" || m.status === "complete") &&
-          m.winner
-      );
-
-      if (semiCompleted.length < 2)
-        return Alert.alert("⚠️ Semi Finals not completed yet");
-
-      const winners = semiCompleted.map((m) => m.winner);
-      const finalMatch = {
-        tournamentId,
-        stage: "Final",
-        teamA: { teamName: winners[0] },
-        teamB: { teamName: winners[1] },
-        status: "upcoming",
-        createdAt: new Date().toISOString(),
-      };
-
-      const newRef = push(ref(db, "matches"));
-      await set(newRef, finalMatch);
-
-      await update(ref(db, `tournaments/${tournamentId}`), {
-        finalMatch: newRef.key,
-        knockoutStage: "Final",
-      });
-      Alert.alert("🏆 Final Created!");
+      Alert.alert("⚠️ No new knockout stage can be generated now.");
     } catch (e) {
       Alert.alert("Error", e.message);
     } finally {
@@ -251,50 +222,19 @@ export default function KnockoutScreen({ route, navigation }) {
     </View>
   );
 
-  const qf = matches.filter((m) => m.stage === "Quarter Final");
-  const semi = matches.filter((m) => m.stage === "Semi Final");
-  const final = matches.filter((m) => m.stage === "Final");
-
-  const qfDone = qf.every(
-    (m) => m.status === "completed" || m.status === "complete"
-  );
-  const semiDone = semi.every(
-    (m) => m.status === "completed" || m.status === "complete"
-  );
-  const finalDone = final.every(
-    (m) => m.status === "completed" || m.status === "complete"
-  );
-
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>🏆 Knockout Stage</Text>
       {loading && <ActivityIndicator size="large" color="#2196F3" />}
 
-      {qf.length === 0 && (
-        <TouchableOpacity style={styles.button} onPress={generateQuarterFinals}>
-          <Text style={styles.buttonText}>Generate Quarter Finals</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        style={styles.button}
+        onPress={generateNextKnockoutStage}
+      >
+        <Text style={styles.buttonText}>Generate Next Knockout Stage</Text>
+      </TouchableOpacity>
 
-      {qfDone && semi.length === 0 && (
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: "#ff9800" }]}
-          onPress={generateSemiFinals}
-        >
-          <Text style={styles.buttonText}>Generate Semi Finals</Text>
-        </TouchableOpacity>
-      )}
-
-      {semiDone && final.length === 0 && (
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: "#4caf50" }]}
-          onPress={generateFinal}
-        >
-          <Text style={styles.buttonText}>Generate Final</Text>
-        </TouchableOpacity>
-      )}
-
-      {finalDone && !tournament?.champion && (
+      {matches.length > 0 && !tournament?.champion && (
         <TouchableOpacity
           style={[styles.button, { backgroundColor: "#9c27b0" }]}
           onPress={announceChampion}

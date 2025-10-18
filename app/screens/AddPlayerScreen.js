@@ -1,4 +1,3 @@
-// screens/AddPlayerScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -26,6 +25,7 @@ const AddPlayerScreen = () => {
   const [playerNumber, setPlayerNumber] = useState("");
   const [playerRole, setPlayerRole] = useState("Player");
   const [playerLogo, setPlayerLogo] = useState(null);
+  const [playerCity, setPlayerCity] = useState(""); 
   const [loading, setLoading] = useState(false);
 
   const pickImage = async () => {
@@ -51,12 +51,18 @@ const AddPlayerScreen = () => {
       if (playerLogo) {
         const response = await fetch(playerLogo);
         const blob = await response.blob();
-        const imageRef = storageRef(storage, `playerLogos/${Date.now()}_${playerName}.jpg`);
+        const imageRef = storageRef(
+          storage,
+          `playerLogos/${Date.now()}_${playerName}.jpg`
+        );
         await uploadBytes(imageRef, blob);
         logoUrl = await getDownloadURL(imageRef);
       }
 
-      const playersRef = ref(db, `tournaments/${tournamentId}/teams/${team.id}/players`);
+      const playersRef = ref(
+        db,
+        `tournaments/${tournamentId}/teams/${team.id}/players`
+      );
       const newPlayerRef = push(playersRef);
       await update(newPlayerRef, {
         id: newPlayerRef.key,
@@ -64,6 +70,7 @@ const AddPlayerScreen = () => {
         number: playerNumber || "-",
         role: playerRole,
         logo: logoUrl || null,
+        city: playerCity || "-", 
         createdAt: new Date().toISOString(),
       });
 
@@ -72,6 +79,7 @@ const AddPlayerScreen = () => {
       setPlayerNumber("");
       setPlayerRole("Player");
       setPlayerLogo(null);
+      setPlayerCity("");
 
       navigation.goBack();
     } catch (error) {
@@ -118,6 +126,14 @@ const AddPlayerScreen = () => {
         placeholder="Enter role (e.g., Batsman)"
         value={playerRole}
         onChangeText={setPlayerRole}
+      />
+
+      <Text style={styles.label}>City</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter city"
+        value={playerCity}
+        onChangeText={setPlayerCity}
       />
 
       {loading ? (

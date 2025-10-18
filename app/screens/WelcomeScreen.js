@@ -17,8 +17,8 @@ export default function WelcomeScreen({navigation}) {
         <Text style={{fontSize:25,fontWeight:'bold',color:'#000',marginTop:20,}}>Share Your Talent</Text>
         </View>
         <View style={{position:'absolute',bottom:30,width:'100%',alignItems:'center',}}>
-        <AppButton onPress={()=>navigation.navigate("Login")}>LOGIN</AppButton>
-        <AppButton onPress={()=>navigation.navigate("Register")} style={{backgroundColor:'#07FFF0'}}>REGISTER</AppButton>
+        <AppButton onPress={()=>navigation.navigate("Login")} style={{marginBottom: 20}}>LOGIN</AppButton>
+        <AppButton onPress={()=>navigation.navigate("Register")} style={{backgroundColor:'#07FFF0',marginBottom: 80 }}>REGISTER</AppButton>
         </View>
       </ImageBackground>
     </Screen>

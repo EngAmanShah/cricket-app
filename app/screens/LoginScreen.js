@@ -2,11 +2,8 @@ import React from "react";
 import { useState } from "react";
 import {
   View,
-  TextInput,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   ImageBackground,
   Dimensions,
 } from "react-native";
@@ -14,7 +11,6 @@ import {
 import { auth } from "../config/firebase-config";
 import {
   signInWithEmailAndPassword,
-  sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
 
@@ -30,23 +26,22 @@ export default function LoginScreen({ navigation }) {
 
   const [visibility, setvisibility] = useState(true);
 
- const handleSignIn = () => {
-  console.log("Login pressed", userData);
-  signInWithEmailAndPassword(auth, userData.email, userData.password)
-    .then((userCredentials) => {
-      console.log("Signed in", userCredentials.user);
-      const user = userCredentials.user;
-      if (!user.emailVerified) {
-        alert("Verify your email to continue");
-        signOut(auth);
-      }
-    })
-    .catch((error) => {
-      console.log(error);
-      alert(error.message);
-    });
-};
-
+  const handleSignIn = () => {
+    console.log("Login pressed", userData);
+    signInWithEmailAndPassword(auth, userData.email, userData.password)
+      .then((userCredentials) => {
+        console.log("Signed in", userCredentials.user);
+        const user = userCredentials.user;
+        if (!user.emailVerified) {
+          alert("Verify your email to continue");
+          signOut(auth);
+        }
+      })
+      .catch((error) => {
+        console.log(error);
+        alert(error.message);
+      });
+  };
 
   return (
     <Screen>
@@ -75,7 +70,7 @@ export default function LoginScreen({ navigation }) {
             onChangeText={(text) => setuserData({ ...userData, email: text })}
           />
           <AppTextInput
-            placeholder="Pasword"
+            placeholder="Password"
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
@@ -88,29 +83,55 @@ export default function LoginScreen({ navigation }) {
               setuserData({ ...userData, password: text })
             }
           />
+
+          {/* Forgot Password */}
           <Text
-            style={{
-              color: "brown",
-              fontWeight: "bold",
-              fontSize: 17,
-              alignSelf: "flex-end",
-              margin: 15,
-              marginRight: 35,
-            }}
+            style={styles.linkText}
             onPress={() => navigation.navigate("Forgot Password")}
           >
             Forgot Password?
           </Text>
+
+          {/* Login Button */}
           <AppButton
             onPress={handleSignIn}
             style={{ marginTop: 10, width: "82%" }}
           >
             LOGIN
           </AppButton>
+
+          {/* Register link */}
+          <Text style={styles.registerText}>
+            Don’t have an account?{" "}
+            <Text
+              style={styles.linkHighlight}
+              onPress={() => navigation.navigate("Register")}
+            >
+              Register
+            </Text>
+          </Text>
         </View>
       </ImageBackground>
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({});
+const styles = StyleSheet.create({
+  linkText: {
+    color: "brown",
+    fontWeight: "bold",
+    fontSize: 17,
+    alignSelf: "flex-end",
+    margin: 15,
+    marginRight: 35,
+  },
+  registerText: {
+    color: "black",
+    fontSize: 16,
+    marginTop: 15,
+  },
+  linkHighlight: {
+    color: "brown",
+    fontWeight: "bold",
+  },
+});

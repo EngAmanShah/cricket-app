@@ -13,10 +13,12 @@ export default function TossScreen() {
   const [tossWinner, setTossWinner] = useState(null);
   const [electedTo, setElectedTo] = useState("Bat");
 
+
   const getTeamName = (team) => {
     if (!team) return "Unknown Team";
     if (typeof team === "string") return team;
 
+    
     if (typeof team.teamName === "string") return team.teamName;
     if (typeof team.name === "string") return team.name;
     if (typeof team.id === "string") return team.id;
@@ -85,7 +87,7 @@ export default function TossScreen() {
         createdBy: auth.currentUser?.uid || null,
       });
 
-      navigation.replace("LiveScoringScreen", { matchId });
+navigation.replace("LiveIndividualMatch", { matchId });
     } catch (err) {
       console.error(err);
       Alert.alert("Error", "Could not start match. Try again.");

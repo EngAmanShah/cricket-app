@@ -23,7 +23,7 @@ export default function StartMatch() {
       </TouchableOpacity>
 
     
-      {/* <TouchableOpacity
+      <TouchableOpacity
         style={[styles.box, { width: boxSize, height: boxSize }]}
         onPress={() =>
           navigation.navigate("Home", { screen: "StartIndividualMatch" }) 
@@ -32,7 +32,7 @@ export default function StartMatch() {
         <Text style={styles.title}>Individual Match</Text>
         <Text style={styles.info}>Create a match</Text>
         <Text style={styles.info}>Select teams manually</Text>
-      </TouchableOpacity> */}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexDirection: "row",
-    flexWrap: "wrap", // allow wrapping
+    flexWrap: "wrap", 
     justifyContent: "center",
     alignItems: "flex-start",
     marginTop: 50,

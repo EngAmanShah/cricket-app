@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { db } from "../config/firebase-config";
 import { ref, onValue, update } from "firebase/database";
 
-export default function SelectPlayersScreen() {
+export default function IndividualPlayerList() {
   const navigation = useNavigation();
   const route = useRoute();
   const { tournamentId, matchId, teamA, teamB, overs, ballType, format } = route.params;
@@ -26,63 +26,70 @@ export default function SelectPlayersScreen() {
   const [playingA, setPlayingA] = useState([]);
   const [playingB, setPlayingB] = useState([]);
 
-useEffect(() => {
-  const prepareSquad = (team, captainKey) => {
-    if (!team) return [];
+  useEffect(() => {
+    const prepareSquad = (team, captainKey) => {
+      if (!team) return [];
 
-    const players = team.players
-      ? Object.values(team.players).map((p, idx) => ({
-          id: p.id || idx.toString(),
-          name: p.name || "Unnamed",
-          number: p.number || "",
-          role: p.role || "",
-        }))
-      : [];
+      const players = team.players
+        ? Object.values(team.players).map((p, idx) => ({
+            id: p.id || p.key || idx.toString(),
+            name: p.name || "Unnamed",
+            number: p.number || "",
+            role: p.role || "",
+          }))
+        : [];
 
-    const captainName = team.captainName || team.captain?.captainName;
-    const captainNumber = team.captainNumber || team.captain?.captainNumber;
+      const captainName =
+        team.captainName ||
+        team.captain?.name ||
+        (players.length > 0 ? players[0].name : null);
+      const captainNumber =
+        team.captainNumber || team.captain?.number || "";
 
-    if (captainName && !players.some((p) => p.name === captainName)) {
-      players.unshift({
-        id: captainKey,
-        name: captainName,
-        number: captainNumber || "",
-        role: "Captain",
+      if (captainName && !players.some((p) => p.name === captainName)) {
+        players.unshift({
+          id: captainKey,
+          name: captainName,
+          number: captainNumber,
+          role: "Captain",
+        });
+      } else {
+        const firstPlayer = players[0];
+        if (firstPlayer && firstPlayer.role !== "Captain") {
+          firstPlayer.role = "Captain";
+        }
+      }
+
+      return players;
+    };
+
+    if (tournamentId) {
+      const teamsRef = ref(db, `tournaments/${tournamentId}/teams`);
+      onValue(teamsRef, (snapshot) => {
+        const teamsData = snapshot.val() || {};
+        const teamAData =
+          teamsData[teamA.id] ||
+          Object.values(teamsData).find((t) => t.teamName === teamA.teamName) ||
+          teamA;
+        const teamBData =
+          teamsData[teamB.id] ||
+          Object.values(teamsData).find((t) => t.teamName === teamB.teamName) ||
+          teamB;
+
+        setTeamAName(teamAData.teamName || teamAName);
+        setTeamBName(teamBData.teamName || teamBName);
+
+        setSquadA(prepareSquad(teamAData, "captainA"));
+        setSquadB(prepareSquad(teamBData, "captainB"));
       });
+    } else {
+      setSquadA(prepareSquad(teamA, "captainA"));
+      setSquadB(prepareSquad(teamB, "captainB"));
+
+      setTeamAName(teamA?.teamName || "Team A");
+      setTeamBName(teamB?.teamName || "Team B");
     }
-
-    return players;
-  };
-
-  if (tournamentId) {
-    const teamsRef = ref(db, `tournaments/${tournamentId}/teams`);
-    onValue(teamsRef, (snapshot) => {
-      const teamsData = snapshot.val() || {};
-      const teamAData =
-        teamsData[teamA.id] ||
-        Object.values(teamsData).find((t) => t.teamName === teamA.teamName) ||
-        teamA;
-      const teamBData =
-        teamsData[teamB.id] ||
-        Object.values(teamsData).find((t) => t.teamName === teamB.teamName) ||
-        teamB;
-
-      setTeamAName(teamAData.teamName || teamAName);
-      setTeamBName(teamBData.teamName || teamBName);
-
-      setSquadA(prepareSquad(teamAData, "captainA"));
-      setSquadB(prepareSquad(teamBData, "captainB"));
-    });
-  } else {
-    setSquadA(prepareSquad(teamA, "captainA"));
-    setSquadB(prepareSquad(teamB, "captainB"));
-
-    setTeamAName(teamA?.teamName || "Team A");
-    setTeamBName(teamB?.teamName || "Team B");
-  }
-}, [tournamentId, teamA, teamB]);
-
-
+  }, [tournamentId, teamA, teamB]);
 
   const addPlayerToSquad = () => {
     if (!nameInput.trim()) return;
@@ -101,26 +108,17 @@ useEffect(() => {
   };
 
   const toggleSelectPlaying = (team, playerId) => {
-    if (team === "A") {
-      if (playingA.includes(playerId))
-        setPlayingA((p) => p.filter((id) => id !== playerId));
-      else {
-        if (playingA.length >= 11) {
-          Alert.alert("Limit", "Only 11 players allowed.");
-          return;
-        }
-        setPlayingA((p) => [playerId, ...p]);
-      }
+    const teamList = team === "A" ? playingA : playingB;
+    const setTeamList = team === "A" ? setPlayingA : setPlayingB;
+
+    if (teamList.includes(playerId)) {
+      setTeamList(teamList.filter((id) => id !== playerId));
     } else {
-      if (playingB.includes(playerId))
-        setPlayingB((p) => p.filter((id) => id !== playerId));
-      else {
-        if (playingB.length >= 11) {
-          Alert.alert("Limit", "Only 11 players allowed.");
-          return;
-        }
-        setPlayingB((p) => [playerId, ...p]);
+      if (teamList.length >= 11) {
+        Alert.alert("Limit", "Only 11 players allowed.");
+        return;
       }
+      setTeamList([playerId, ...teamList]);
     }
   };
 
@@ -133,10 +131,18 @@ useEffect(() => {
     const teamAPlayers = squadA.filter((p) => playingA.includes(p.id));
     const teamBPlayers = squadB.filter((p) => playingB.includes(p.id));
 
+    const normalizePlayers = (players) =>
+      players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        number: p.number || "",
+        role: p.role || "",
+      }));
+
     const matchPlayersRef = ref(db, `matches/${matchId}/players`);
     await update(matchPlayersRef, {
-      teamA: teamAPlayers,
-      teamB: teamBPlayers,
+      teamA: normalizePlayers(teamAPlayers),
+      teamB: normalizePlayers(teamBPlayers),
     });
 
     const playerStats = {};
@@ -157,7 +163,7 @@ useEffect(() => {
     const matchLiveRef = ref(db, `matches/${matchId}/live/playerStats`);
     await update(matchLiveRef, playerStats);
 
-    navigation.navigate("TossScreen", {
+    navigation.navigate("IndividualToss", {
       tournamentId,
       matchId,
       teamA: { ...teamA, players: teamAPlayers, teamName: teamAName },
@@ -167,32 +173,31 @@ useEffect(() => {
       format,
     });
   };
-const renderPlayer = (item, team) => {
-  const selected = team === "A" ? playingA.includes(item.id) : playingB.includes(item.id);
-  const isCaptain = item.role === "Captain";
+
+  const renderPlayer = (item, team) => {
+    const selected = team === "A" ? playingA.includes(item.id) : playingB.includes(item.id);
+    const isCaptain = item.role === "Captain";
 
     return (
-    <TouchableOpacity
-      onPress={() => toggleSelectPlaying(team, item.id)}
-      style={[
-        styles.playerRow,
-        selected && styles.playerSelected,
-        isCaptain && styles.captainRow,
-      ]}
-    >
-      <View>
-        <Text style={{ fontWeight: "600", color: selected ? "#fff" : "#000" }}>
-          {item.name} {isCaptain ? "(C)" : ""}
+      <TouchableOpacity
+        onPress={() => toggleSelectPlaying(team, item.id)}
+        style={[
+          styles.playerRow,
+          selected && styles.playerSelected,
+          isCaptain && styles.captainRow,
+        ]}
+      >
+        <View>
+          <Text style={{ fontWeight: "600", color: selected ? "#fff" : "#000" }}>
+            {item.name} {isCaptain ? "(C)" : ""}
+          </Text>
+          {item.role && <Text style={{ color: selected ? "#fff" : "#555" }}>{item.role}</Text>}
+        </View>
+        <Text style={{ color: selected ? "#fff" : "#777" }}>
+          {selected ? "Selected" : "Tap to select"}
         </Text>
-        {item.role ? (
-          <Text style={{ color: selected ? "#fff" : "#555" }}>{item.role}</Text>
-        ) : null}
-      </View>
-      <Text style={{ color: selected ? "#fff" : "#777" }}>
-        {selected ? "Selected" : "Tap to select"}
-      </Text>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -204,9 +209,7 @@ const renderPlayer = (item, team) => {
           onPress={() => setActiveTeam("A")}
           style={[styles.tab, activeTeam === "A" && styles.activeTab]}
         >
-          <Text
-            style={[styles.tabText, activeTeam === "A" && { color: "#fff" }]}
-          >
+          <Text style={[styles.tabText, activeTeam === "A" && { color: "#fff" }]}>
             {teamAName}
           </Text>
         </TouchableOpacity>
@@ -214,18 +217,14 @@ const renderPlayer = (item, team) => {
           onPress={() => setActiveTeam("B")}
           style={[styles.tab, activeTeam === "B" && styles.activeTab]}
         >
-          <Text
-            style={[styles.tabText, activeTeam === "B" && { color: "#fff" }]}
-          >
+          <Text style={[styles.tabText, activeTeam === "B" && { color: "#fff" }]}>
             {teamBName}
           </Text>
         </TouchableOpacity>
       </View>
 
       <TextInput
-        placeholder={`Add player to ${
-          activeTeam === "A" ? teamAName : teamBName
-        }`}
+        placeholder={`Add player to ${activeTeam === "A" ? teamAName : teamBName}`}
         value={nameInput}
         onChangeText={setNameInput}
         style={styles.input}

@@ -17,12 +17,14 @@ import {
   MyClubs,
   MyStats,
   CustomDrawer,
+  
 } from "../screens";
 
 import TournamentNavigator from "./TournamentNavigator";
 import HomeNavigator from './HomeNavigator';
 import ProfileNavigator from "./ProfileNavigator";
-
+import PlayerLeaderboardScreen from "../screens/PlayerLeaderboardScreen";
+import TeamLeaderboardScreen from "../screens/TeamLeaderboardScreen";
 const Drawer = createDrawerNavigator();
 
 const AppNavigator = () => (
@@ -73,42 +75,27 @@ const AppNavigator = () => (
       }}
     />
     <Drawer.Screen
-      name="Go Live"
-      component={GoLive}
-      options={{
+      name="Player Leaderboard"
+      component={PlayerLeaderboardScreen}
+     options={{ 
         drawerIcon: ({ size, color }) => (
-          <Entypo name="video-camera" size={size} color={color} />
+          <Ionicons name="people" size={size} color={color} />
         ),
+      
       }}
     />
+  
     <Drawer.Screen
-      name="My Matches"
-      component={MyMatches}
-      options={{
-        drawerIcon: ({ size, color }) => (
-          <MaterialCommunityIcons name="cricket" size={size} color={color} />
-        ),
-      }}
-    />
-    <Drawer.Screen
-      name="My Teams"
-      component={MyTeams}
+      name="Teams Leaderboard"
+      component={TeamLeaderboardScreen}
       options={{
         drawerIcon: ({ size, color }) => (
           <Ionicons name="people" size={size} color={color} />
         ),
       }}
     />
-    <Drawer.Screen
-      name="My Tournaments"
-      component={MyTournaments}
-      options={{
-        drawerIcon: ({ size, color }) => (
-          <Entypo name="trophy" size={size} color={color} />
-        ),
-      }}
-    />
-    <Drawer.Screen
+  
+    {/* <Drawer.Screen
       name="My Clubs"
       component={MyClubs}
       options={{
@@ -116,16 +103,8 @@ const AppNavigator = () => (
           <MaterialCommunityIcons name="cards-club" size={size} color={color} />
         ),
       }}
-    />
-    <Drawer.Screen
-      name="My Stats"
-      component={MyStats}
-      options={{
-        drawerIcon: ({ size, color }) => (
-          <Ionicons name="stats-chart" size={size} color={color} />
-        ),
-      }}
-    />
+    /> */}
+  
   </Drawer.Navigator>
 );
 

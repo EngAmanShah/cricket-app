@@ -1,4 +1,4 @@
-// TournamentHome.js
+
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator } from "react-native";
 import { db } from "../config/firebase-config";
